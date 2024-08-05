@@ -101,7 +101,7 @@ public class MovingAverageQueryRunner implements QueryRunner<Row>
                      .map(i -> new Interval(i.getStart().withPeriodAdded(period, offset), i.getEnd()))
                      .collect(Collectors.toList());
     } else {
-      throw new ISE("Only PeriodGranulaity is supported for movingAverage queries");
+      throw new ISE("Only PeriodGranularity is supported for movingAverage queries");
     }
 
     Sequence<Row> resultsSeq;
