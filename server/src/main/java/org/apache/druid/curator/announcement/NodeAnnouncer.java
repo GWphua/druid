@@ -25,6 +25,7 @@ import org.apache.curator.framework.CuratorFramework;
 import org.apache.curator.framework.api.transaction.CuratorOp;
 import org.apache.curator.framework.recipes.cache.ChildData;
 import org.apache.curator.framework.recipes.cache.NodeCache;
+import org.apache.curator.utils.ZKPaths;
 import org.apache.druid.java.util.common.IAE;
 import org.apache.druid.java.util.common.ISE;
 import org.apache.druid.java.util.common.io.Closer;
@@ -36,12 +37,14 @@ import org.apache.druid.utils.CloseableUtils;
 import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.KeeperException;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.ExecutorService;
 
 /**
  * The {@link NodeAnnouncer} class is responsible for announcing a single node
@@ -58,6 +61,8 @@ public class NodeAnnouncer
   private static final Logger log = new Logger(NodeAnnouncer.class);
 
   private final CuratorFramework curator;
+  private final ExecutorService pathNodeCacheExecutor;
+
   private final ConcurrentMap<String, NodeCache> listeners = new ConcurrentHashMap<>();
   private final ConcurrentHashMap<String, byte[]> announcedPaths = new ConcurrentHashMap<>();
 
@@ -88,9 +93,10 @@ public class NodeAnnouncer
   @GuardedBy("toAnnounce")
   private final List<String> pathsCreatedInThisAnnouncer = new ArrayList<>();
 
-  public NodeAnnouncer(CuratorFramework curator)
+  public NodeAnnouncer(CuratorFramework curator, ExecutorService exec)
   {
     this.curator = curator;
+    this.pathNodeCacheExecutor = exec;
   }
 
   @VisibleForTesting
@@ -105,7 +111,7 @@ public class NodeAnnouncer
     log.info("Starting NodeAnnouncer");
     synchronized (toAnnounce) {
       if (started) {
-        log.debug("Called start() but NodeAnnouncer have already started.");
+        log.debug("Called start to an already-started NodeAnnouncer.");
         return;
       }
 
@@ -129,12 +135,13 @@ public class NodeAnnouncer
     log.info("Stopping NodeAnnouncer");
     synchronized (toAnnounce) {
       if (!started) {
-        log.debug("Called stop() but NodeAnnouncer have not started.");
+        log.debug("Called stop to NodeAnnouncer which is not started.");
         return;
       }
 
       started = false;
       closeResources();
+      unannounceAllPaths();
       dropPathsCreatedInThisAnnouncer();
     }
   }
@@ -149,7 +156,21 @@ public class NodeAnnouncer
     for (String announcementPath : announcedPaths.keySet()) {
       closer.register(() -> unannounce(announcementPath));
     }
-    CloseableUtils.closeAndWrapExceptions(closer);
+
+    try {
+      CloseableUtils.closeAll(closer);
+    } catch (IOException e) {
+      throw new RuntimeException(e);
+    } finally {
+      pathNodeCacheExecutor.shutdown();
+    }
+  }
+
+  @GuardedBy("toAnnounce")
+  private void unannounceAllPaths() {
+    for (String announcementPath: announcedPaths.keySet()) {
+      unannounce(announcementPath);
+    }
   }
 
   @GuardedBy("toAnnounce")

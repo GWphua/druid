@@ -124,7 +124,7 @@ public class BatchServerInventoryViewTest
     );
     announcer.start();
 
-    nodeAnnouncer = new NodeAnnouncer(cf);
+    nodeAnnouncer = new NodeAnnouncer(cf, Execs.directExecutor());
     nodeAnnouncer.start();
 
     DruidServerMetadata serverMetadata = new DruidServerMetadata(
