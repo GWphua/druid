@@ -25,7 +25,6 @@ import org.apache.curator.framework.CuratorFramework;
 import org.apache.curator.framework.api.transaction.CuratorOp;
 import org.apache.curator.framework.recipes.cache.ChildData;
 import org.apache.curator.framework.recipes.cache.NodeCache;
-import org.apache.curator.utils.ZKPaths;
 import org.apache.druid.java.util.common.IAE;
 import org.apache.druid.java.util.common.ISE;
 import org.apache.druid.java.util.common.io.Closer;
@@ -159,16 +158,19 @@ public class NodeAnnouncer
 
     try {
       CloseableUtils.closeAll(closer);
-    } catch (IOException e) {
+    }
+    catch (IOException e) {
       throw new RuntimeException(e);
-    } finally {
+    }
+    finally {
       pathNodeCacheExecutor.shutdown();
     }
   }
 
   @GuardedBy("toAnnounce")
-  private void unannounceAllPaths() {
-    for (String announcementPath: announcedPaths.keySet()) {
+  private void unannounceAllPaths()
+  {
+    for (String announcementPath : announcedPaths.keySet()) {
       unannounce(announcementPath);
     }
   }
