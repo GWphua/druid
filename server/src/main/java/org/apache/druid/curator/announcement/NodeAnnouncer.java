@@ -276,9 +276,7 @@ public class NodeAnnouncer
           ChildData currentData = cache.getCurrentData();
 
           if (currentData == null) {
-            // If currentData is null, and we record having announced the data,
-            // this means that the ephemeral node was unexpectedly removed.
-            // We will recreate the node again using the previous data.
+            // Node was deleted, attempt to recreate it.
             final byte[] previouslyAnnouncedData = announcedPaths.get(path);
             if (previouslyAnnouncedData != null) {
               log.info(
@@ -287,6 +285,8 @@ public class NodeAnnouncer
               );
               createAnnouncement(path, previouslyAnnouncedData);
             }
+          } else {
+            log.info("Node[%s] updated, reinstating with new data.", path);
           }
         }
     );
@@ -382,11 +382,13 @@ public class NodeAnnouncer
 
   private void createAnnouncement(final String path, byte[] value) throws Exception
   {
+    log.info("NodeAnnouncer: Creating Announcement on path[%s] with value[%s]", path, value);
     curator.create().compressed().withMode(CreateMode.EPHEMERAL).inBackground().forPath(path, value);
   }
 
   private void updateAnnouncement(final String path, final byte[] value) throws Exception
   {
+    log.info("NodeAnnouncer: Updating Announcement on path[%s] with value[%s]", path, value);
     curator.setData().compressed().inBackground().forPath(path, value);
   }
 
@@ -401,7 +403,7 @@ public class NodeAnnouncer
   public void unannounce(String path)
   {
     synchronized (toAnnounce) {
-      log.info("unannouncing [%s]", path);
+      log.info("NodeAnnouncer: Unannouncing [%s]", path);
       final byte[] value = announcedPaths.remove(path);
 
       if (value == null) {
@@ -411,7 +413,8 @@ public class NodeAnnouncer
     }
 
     try {
-      curator.transaction().forOperations(curator.transactionOp().delete().forPath(path));
+      CuratorOp deleteOp = curator.transactionOp().delete().forPath(path);
+      curator.transaction().forOperations(deleteOp);
     }
     catch (KeeperException.NoNodeException e) {
       log.info("Unannounced node[%s] that does not exist.", path);

@@ -379,11 +379,13 @@ public class Announcer
 
   private String createAnnouncement(final String path, byte[] value) throws Exception
   {
+    log.info("Announcer: Creating Announcement on path[%s] with value[%s]", path, value);
     return curator.create().compressed().withMode(CreateMode.EPHEMERAL).inBackground().forPath(path, value);
   }
 
   private Stat updateAnnouncement(final String path, final byte[] value) throws Exception
   {
+    log.info("Announcer: Updating Announcement on path[%s] with value[%s]", path, value);
     return curator.setData().compressed().inBackground().forPath(path, value);
   }
 
@@ -406,7 +408,7 @@ public class Announcer
       log.debug("Path[%s] not announced, cannot unannounce.", path);
       return;
     }
-    log.info("Unannouncing [%s]", path);
+    log.info("Announcer: Unannouncing [%s]", path);
 
     try {
       CuratorOp deleteOp = curator.transactionOp().delete().forPath(path);
