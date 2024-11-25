@@ -21,8 +21,8 @@ package org.apache.druid.curator.announcement;
 
 import com.google.common.annotations.VisibleForTesting;
 import org.apache.curator.framework.CuratorFramework;
-import org.apache.curator.framework.api.transaction.CuratorTransaction;
-import org.apache.curator.framework.api.transaction.CuratorTransactionFinal;
+import org.apache.curator.framework.api.transaction.CuratorMultiTransaction;
+import org.apache.curator.framework.api.transaction.CuratorOp;
 import org.apache.curator.framework.recipes.cache.ChildData;
 import org.apache.curator.framework.recipes.cache.PathChildrenCache;
 import org.apache.curator.framework.recipes.cache.PathChildrenCacheEvent;
@@ -154,17 +154,20 @@ public class Announcer
       }
 
       if (!parentsIBuilt.isEmpty()) {
-        CuratorTransaction transaction = curator.inTransaction();
+        CuratorMultiTransaction transaction = curator.transaction();
+
+        ArrayList<CuratorOp> operations = new ArrayList<>();
         for (String parent : parentsIBuilt) {
           try {
-            transaction = transaction.delete().forPath(parent).and();
+            CuratorOp deleteParentOperation = curator.transactionOp().delete().forPath(parent);
+            operations.add(deleteParentOperation);
           }
           catch (Exception e) {
             log.info(e, "Unable to delete parent[%s], boooo.", parent);
           }
         }
         try {
-          ((CuratorTransactionFinal) transaction).commit();
+          transaction.forOperations(operations);
         }
         catch (Exception e) {
           log.info(e, "Unable to commit transaction. Please feed the hamsters");
@@ -397,7 +400,8 @@ public class Announcer
     log.info("Unannouncing [%s]", path);
 
     try {
-      curator.inTransaction().delete().forPath(path).and().commit();
+      CuratorOp deletePathOperation = curator.transactionOp().delete().forPath(path);
+      curator.transaction().forOperations(deletePathOperation);
     }
     catch (KeeperException.NoNodeException e) {
       log.info("Node[%s] didn't exist anyway...", path);
