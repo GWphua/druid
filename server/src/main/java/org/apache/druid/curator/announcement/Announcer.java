@@ -24,7 +24,7 @@ import org.apache.curator.framework.CuratorFramework;
 import org.apache.curator.framework.api.transaction.CuratorMultiTransaction;
 import org.apache.curator.framework.api.transaction.CuratorOp;
 import org.apache.curator.framework.recipes.cache.ChildData;
-import org.apache.curator.framework.recipes.cache.PathChildrenCache;
+import org.apache.curator.framework.recipes.cache.CuratorCache;
 import org.apache.curator.framework.recipes.cache.PathChildrenCacheEvent;
 import org.apache.curator.framework.recipes.cache.PathChildrenCacheListener;
 import org.apache.curator.utils.ZKPaths;
@@ -60,12 +60,11 @@ public class Announcer
   private static final Logger log = new Logger(Announcer.class);
 
   private final CuratorFramework curator;
-  private final PathChildrenCacheFactory factory;
   private final ExecutorService pathChildrenCacheExecutor;
 
   private final List<Announceable> toAnnounce = new ArrayList<>();
   private final List<Announceable> toUpdate = new ArrayList<>();
-  private final ConcurrentMap<String, PathChildrenCache> listeners = new ConcurrentHashMap<>();
+  private final ConcurrentMap<String, CuratorCache> listeners = new ConcurrentHashMap<>();
   private final ConcurrentMap<String, ConcurrentMap<String, byte[]>> announcements = new ConcurrentHashMap<>();
   private final List<String> parentsIBuilt = new CopyOnWriteArrayList<String>();
 
@@ -81,12 +80,12 @@ public class Announcer
   {
     this.curator = curator;
     this.pathChildrenCacheExecutor = exec;
-    this.factory = new PathChildrenCacheFactory.Builder()
-        .withCacheData(false)
-        .withCompressed(true)
-        .withExecutorService(exec)
-        .withShutdownExecutorOnClose(false)
-        .build();
+//    this.factory = new PathChildrenCacheFactory.Builder()
+//        .withCacheData(false)
+//        .withCompressed(true)
+//        .withExecutorService(exec)
+//        .withShutdownExecutorOnClose(false)
+//        .build();
   }
 
   @VisibleForTesting
@@ -163,14 +162,14 @@ public class Announcer
             operations.add(deleteParentOperation);
           }
           catch (Exception e) {
-            log.info(e, "Unable to delete parent[%s], boooo.", parent);
+            log.info(e, "Unable to delete parent[%s].", parent);
           }
         }
         try {
           transaction.forOperations(operations);
         }
         catch (Exception e) {
-          log.info(e, "Unable to commit transaction. Please feed the hamsters");
+          log.info(e, "Unable to commit transaction.");
         }
       }
     }
@@ -227,8 +226,8 @@ public class Announcer
       // Synchronize to make sure that I only create a listener once.
       synchronized (finalSubPaths) {
         if (!listeners.containsKey(parentPath)) {
-          final PathChildrenCache cache = factory.make(curator, parentPath);
-          cache.getListenable().addListener(
+          final CuratorCache cache = CuratorCache.build(curator, parentPath);
+          cache.listenable().addListener(
               new PathChildrenCacheListener()
               {
                 private final AtomicReference<Set<String>> pathsLost = new AtomicReference<Set<String>>(null);
@@ -404,14 +403,14 @@ public class Announcer
       curator.transaction().forOperations(deletePathOperation);
     }
     catch (KeeperException.NoNodeException e) {
-      log.info("Node[%s] didn't exist anyway...", path);
+      log.info("ZooKeeper tries to delete Node[%s] but it dosen't exist...", path);
     }
     catch (Exception e) {
       throw new RuntimeException(e);
     }
   }
 
-  private void startCache(PathChildrenCache cache)
+  private void startCache(CuratorCache cache)
   {
     try {
       cache.start();
