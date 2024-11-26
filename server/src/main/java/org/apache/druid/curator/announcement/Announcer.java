@@ -152,6 +152,7 @@ public class Announcer
             log.info(e, "Unable to delete parent[%s].", parent);
           }
         }
+
         try {
           curator.transaction().forOperations(operations);
         }
@@ -213,6 +214,7 @@ public class Announcer
       // Synchronize to make sure that I only create a listener once.
       synchronized (finalSubPaths) {
         if (!listeners.containsKey(parentPath)) {
+
           final CuratorCache cache = CuratorCache.builder(curator, parentPath)
                                                  .withOptions(
                                                      CuratorCache.Options.COMPRESSED_DATA
