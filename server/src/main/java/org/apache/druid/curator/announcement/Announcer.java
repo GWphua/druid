@@ -217,16 +217,14 @@ public class Announcer
       // Synchronize to make sure that I only create a listener once.
       synchronized (finalSubPaths) {
         if (!listeners.containsKey(parentPath)) {
-          final CuratorCacheBuilder curatorCacheBuilder = CuratorCache.builder(curator, parentPath);
-          final CuratorCache cache = curatorCacheBuilder
-              .withOptions(
-                  CuratorCache.Options.DO_NOT_CLEAR_ON_CLOSE,
-                  CuratorCache.Options.COMPRESSED_DATA
-              )
-              .withStorage(
-                  CuratorCacheStorage.dataNotCached()
-              )
-              .build();
+          final CuratorCache cache = CuratorCache.builder(curator, parentPath)
+                                                 .withOptions(
+                                                     CuratorCache.Options.COMPRESSED_DATA
+                                                 )
+                                                 .withStorage(
+                                                     CuratorCacheStorage.dataNotCached()
+                                                 )
+                                                 .build();
 
           cache.listenable().addListener(
               (type, oldData, newData) -> {
