@@ -220,8 +220,8 @@ public class Announcer
           final CuratorCacheBuilder curatorCacheBuilder = CuratorCache.builder(curator, parentPath);
           final CuratorCache cache = curatorCacheBuilder
               .withOptions(
-                CuratorCache.Options.DO_NOT_CLEAR_ON_CLOSE,
-                CuratorCache.Options.COMPRESSED_DATA
+                  CuratorCache.Options.DO_NOT_CLEAR_ON_CLOSE,
+                  CuratorCache.Options.COMPRESSED_DATA
               )
               .withStorage(
                   CuratorCacheStorage.dataNotCached()
@@ -241,7 +241,8 @@ public class Announcer
                       log.info("Node[%s] dropped, reinstating.", newData.getPath());
                       try {
                         createAnnouncement(newData.getPath(), value);
-                      } catch (Exception e) {
+                      }
+                      catch (Exception e) {
                         throw new RuntimeException(e);
                       }
                     }
