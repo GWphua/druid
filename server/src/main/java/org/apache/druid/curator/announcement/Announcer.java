@@ -235,12 +235,13 @@ public class Announcer
                 log.debug("Path[%s] got event type[%s]", parentPath, type);
                 switch (type) {
                   case NODE_DELETED:
-                    final ZKPaths.PathAndNode childPath = ZKPaths.getPathAndNode(newData.getPath());
-                    final byte[] value = finalSubPaths.get(childPath.getNode());
+                    // If the node is deleted, we try to reinstate the node.
+                    final String pathOfDeletedNode = oldData.getPath();
+                    final byte[] value = finalSubPaths.get(ZKPaths.getPathAndNode(pathOfDeletedNode).getNode());
                     if (value != null) {
-                      log.info("Node[%s] dropped, reinstating.", newData.getPath());
+                      log.info("Node[%s] dropped, reinstating.", pathOfDeletedNode);
                       try {
-                        createAnnouncement(newData.getPath(), value);
+                        createAnnouncement(pathOfDeletedNode, value);
                       }
                       catch (Exception e) {
                         throw new RuntimeException(e);
@@ -249,7 +250,8 @@ public class Announcer
                     break;
                   case NODE_CREATED:
                     if (addedChildren != null) {
-                      addedChildren.add(newData.getPath());
+                      final String pathOfCreatedNode = newData.getPath();
+                      addedChildren.add(pathOfCreatedNode);
                     }
                     // fall through
                   case NODE_CHANGED:

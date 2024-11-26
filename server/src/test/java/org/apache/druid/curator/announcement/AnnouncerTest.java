@@ -153,7 +153,8 @@ public class AnnouncerTest extends CuratorTestBase
     curator.blockUntilConnected();
     Announcer announcer = new Announcer(curator, exec);
     try {
-      curator.inTransaction().create().forPath("/somewhere").and().commit();
+      CuratorOp createOperation = curator.transactionOp().create().forPath("/somewhere");
+      curator.transaction().forOperations(createOperation);
       announcer.start();
 
       final byte[] billy = StringUtils.toUtf8("billy");
