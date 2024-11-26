@@ -207,7 +207,7 @@ public class Announcer
       // I don't have a watcher on this path yet, create a Map and start watching.
       announcements.putIfAbsent(parentPath, new ConcurrentHashMap<>());
 
-      // Guaranteed to be non-null, but might be a map put in there by another thread.
+      // Guaranteed to be non-null, but might be a map created by other threads.
       final ConcurrentMap<String, byte[]> finalSubPaths = announcements.get(parentPath);
 
       // Synchronize to make sure that I only create a listener once.
