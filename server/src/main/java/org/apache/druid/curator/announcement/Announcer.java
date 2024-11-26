@@ -21,10 +21,8 @@ package org.apache.druid.curator.announcement;
 
 import com.google.common.annotations.VisibleForTesting;
 import org.apache.curator.framework.CuratorFramework;
-import org.apache.curator.framework.api.transaction.CuratorMultiTransaction;
 import org.apache.curator.framework.api.transaction.CuratorOp;
 import org.apache.curator.framework.recipes.cache.CuratorCache;
-import org.apache.curator.framework.recipes.cache.CuratorCacheBuilder;
 import org.apache.curator.framework.recipes.cache.CuratorCacheStorage;
 import org.apache.curator.utils.ZKPaths;
 import org.apache.druid.java.util.common.IAE;
@@ -144,8 +142,6 @@ public class Announcer
       }
 
       if (!parentsIBuilt.isEmpty()) {
-        CuratorMultiTransaction transaction = curator.transaction();
-
         ArrayList<CuratorOp> operations = new ArrayList<>();
         for (String parent : parentsIBuilt) {
           try {
@@ -157,7 +153,7 @@ public class Announcer
           }
         }
         try {
-          transaction.forOperations(operations);
+          curator.transaction().forOperations(operations);
         }
         catch (Exception e) {
           log.info(e, "Unable to commit transaction.");
