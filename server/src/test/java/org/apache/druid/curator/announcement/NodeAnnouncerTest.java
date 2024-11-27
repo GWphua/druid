@@ -191,7 +191,6 @@ public class NodeAnnouncerTest extends CuratorTestBase
     curator.start();
     curator.blockUntilConnected();
     NodeAnnouncer announcer = new NodeAnnouncer(curator);
-    announcer.initializeAddedChildren();
 
     final byte[] billy = StringUtils.toUtf8("billy");
     final String testPath1 = "/test1";
@@ -202,9 +201,6 @@ public class NodeAnnouncerTest extends CuratorTestBase
     Assert.assertNull("/somewhere/test2 does not exists", curator.checkExists().forPath(testPath2));
 
     announcer.start();
-    while (!announcer.getAddedChildren().contains("/test1")) {
-      Thread.sleep(100);
-    }
 
     try {
       Assert.assertArrayEquals("/test1 has data", billy, curator.getData().decompressed().forPath(testPath1));
@@ -269,15 +265,15 @@ public class NodeAnnouncerTest extends CuratorTestBase
     curator.blockUntilConnected();
     NodeAnnouncer announcer = new NodeAnnouncer(curator);
     try {
-      curator.inTransaction().create().forPath("/somewhere").and().commit();
+      curator.transaction().forOperations(curator.transactionOp().create().forPath("/somewhere"));
       announcer.start();
 
       final byte[] billy = StringUtils.toUtf8("billy");
       final String testPath1 = "/test1";
       final String testPath2 = "/somewhere/test2";
-      final Set<String> paths = Sets.newHashSet(testPath1, testPath2);
-      announcer.announce(testPath1, billy);
-      announcer.announce(testPath2, billy);
+      final Set< String> paths = Sets.newHashSet(testPath1, testPath2);
+      awaitAnnounce(announcer, testPath1, billy, true);
+      awaitAnnounce(announcer, testPath2, billy, true);
 
       Assert.assertArrayEquals(billy, curator.getData().decompressed().forPath(testPath1));
       Assert.assertArrayEquals(billy, curator.getData().decompressed().forPath(testPath2));

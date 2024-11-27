@@ -19,10 +19,10 @@
 
 package org.apache.druid.curator.announcement;
 
-import com.google.common.annotations.VisibleForTesting;
 import org.apache.curator.framework.CuratorFramework;
 import org.apache.curator.framework.api.transaction.CuratorOp;
 import org.apache.curator.framework.recipes.cache.CuratorCache;
+import org.apache.curator.framework.recipes.cache.CuratorCacheListener;
 import org.apache.curator.framework.recipes.cache.CuratorCacheStorage;
 import org.apache.curator.utils.ZKPaths;
 import org.apache.druid.java.util.common.IAE;
@@ -38,7 +38,6 @@ import org.apache.zookeeper.data.Stat;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -61,9 +60,6 @@ public class NodeAnnouncer
   private final ConcurrentMap<String, ConcurrentMap<String, byte[]>> announcements = new ConcurrentHashMap<>();
   private final List<String> parentsIBuilt = new CopyOnWriteArrayList<>();
 
-  // Used for testing
-  private Set<String> addedChildren;
-
   private boolean started = false;
 
   public NodeAnnouncer(
@@ -71,18 +67,6 @@ public class NodeAnnouncer
   )
   {
     this.curator = curator;
-  }
-
-  @VisibleForTesting
-  void initializeAddedChildren()
-  {
-    addedChildren = new HashSet<>();
-  }
-
-  @VisibleForTesting
-  Set<String> getAddedChildren()
-  {
-    return addedChildren;
   }
 
   @LifecycleStart
@@ -210,11 +194,10 @@ public class NodeAnnouncer
 
           final CuratorCache cache = CuratorCache.builder(curator, parentPath)
                                                  .withOptions(
-                                                     CuratorCache.Options.COMPRESSED_DATA,
-                                                     CuratorCache.Options.SINGLE_NODE_CACHE
+                                                     CuratorCache.Options.COMPRESSED_DATA
                                                  )
                                                  .withStorage(
-                                                     CuratorCacheStorage.dataNotCached()
+                                                     CuratorCacheStorage.standard()
                                                  )
                                                  .build();
 
@@ -238,13 +221,10 @@ public class NodeAnnouncer
                       }
                     }
                     break;
-                  case NODE_CREATED:
-                    if (addedChildren != null) {
-                      final String pathOfCreatedNode = newData.getPath();
-                      addedChildren.add(pathOfCreatedNode);
-                    }
                     // fall through
+                  case NODE_CREATED:
                   case NODE_CHANGED:
+                  default:
                     // do nothing
                 }
               }
