@@ -191,6 +191,7 @@ public class NodeAnnouncerTest extends CuratorTestBase
     curator.start();
     curator.blockUntilConnected();
     NodeAnnouncer announcer = new NodeAnnouncer(curator);
+    announcer.initializeAddedChildren();
 
     final byte[] billy = StringUtils.toUtf8("billy");
     final String testPath1 = "/test1";
@@ -201,7 +202,7 @@ public class NodeAnnouncerTest extends CuratorTestBase
     Assert.assertNull("/somewhere/test2 does not exists", curator.checkExists().forPath(testPath2));
 
     announcer.start();
-    while (!announcer.getAddedPaths().contains("/test1")) {
+    while (!announcer.getAddedChildren().contains("/test1")) {
       Thread.sleep(100);
     }
 
