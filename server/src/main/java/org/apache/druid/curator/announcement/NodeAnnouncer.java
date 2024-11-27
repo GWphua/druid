@@ -22,7 +22,6 @@ package org.apache.druid.curator.announcement;
 import org.apache.curator.framework.CuratorFramework;
 import org.apache.curator.framework.api.transaction.CuratorOp;
 import org.apache.curator.framework.recipes.cache.CuratorCache;
-import org.apache.curator.framework.recipes.cache.CuratorCacheListener;
 import org.apache.curator.framework.recipes.cache.CuratorCacheStorage;
 import org.apache.curator.utils.ZKPaths;
 import org.apache.druid.java.util.common.IAE;
