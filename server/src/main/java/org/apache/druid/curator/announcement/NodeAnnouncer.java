@@ -39,7 +39,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -159,7 +158,8 @@ public class NodeAnnouncer
   {
     synchronized (toAnnounce) {
       if (!started) {
-        toAnnounce.add(new Announceable(path, bytes, removeParentIfCreated));
+        Announceable announcement = new Announceable(path, bytes, removeParentIfCreated);
+        toAnnounce.add(announcement);
         return;
       }
     }
@@ -220,7 +220,7 @@ public class NodeAnnouncer
                       }
                     }
                     break;
-                    // fall through
+                  // fall through
                   case NODE_CREATED:
                   case NODE_CHANGED:
                   default:
@@ -272,7 +272,8 @@ public class NodeAnnouncer
     synchronized (toAnnounce) {
       if (!started) {
         // removeParentsIfCreated is not relevant for updates; use dummy value "false".
-        toUpdate.add(new Announceable(path, bytes, false));
+        Announceable updatedAnnouncement = new Announceable(path, bytes, false);
+        toUpdate.add(updatedAnnouncement);
         return;
       }
     }
