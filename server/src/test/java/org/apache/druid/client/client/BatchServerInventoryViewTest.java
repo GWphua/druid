@@ -38,7 +38,6 @@ import org.apache.druid.client.BatchServerInventoryView;
 import org.apache.druid.client.DruidServer;
 import org.apache.druid.client.ServerView;
 import org.apache.druid.curator.PotentiallyGzippedCompressionProvider;
-import org.apache.druid.curator.announcement.Announcer;
 import org.apache.druid.curator.announcement.NodeAnnouncer;
 import org.apache.druid.java.util.common.DateTimes;
 import org.apache.druid.java.util.common.ISE;
@@ -89,7 +88,6 @@ public class BatchServerInventoryViewTest
   private TestingCluster testingCluster;
   private CuratorFramework cf;
   private ObjectMapper jsonMapper;
-  private Announcer announcer;
   private NodeAnnouncer nodeAnnouncer;
   private BatchDataSegmentAnnouncer segmentAnnouncer;
   private DataSegmentServerAnnouncer serverAnnouncer;
@@ -117,12 +115,6 @@ public class BatchServerInventoryViewTest
     cf.create().creatingParentsIfNeeded().forPath(TEST_BASE_PATH);
 
     jsonMapper = TestHelper.makeJsonMapper();
-
-    announcer = new Announcer(
-        cf,
-        Execs.directExecutor()
-    );
-    announcer.start();
 
     nodeAnnouncer = new NodeAnnouncer(cf);
     nodeAnnouncer.start();
@@ -165,7 +157,7 @@ public class BatchServerInventoryViewTest
           }
         },
         zkPathsConfig,
-        announcer,
+        nodeAnnouncer,
         jsonMapper
     );
 
@@ -230,7 +222,6 @@ public class BatchServerInventoryViewTest
     batchServerInventoryView.stop();
     filteredBatchServerInventoryView.stop();
     serverAnnouncer.unannounce();
-    announcer.stop();
     nodeAnnouncer.stop();
     cf.close();
     testingCluster.stop();
@@ -480,7 +471,7 @@ public class BatchServerInventoryViewTest
                           return TEST_BASE_PATH;
                         }
                       },
-                      announcer,
+                      nodeAnnouncer,
                       jsonMapper
                   );
                   List<DataSegment> segments = new ArrayList<DataSegment>();
