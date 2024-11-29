@@ -218,9 +218,6 @@ public class Announcer
                                                  .withOptions(
                                                      CuratorCache.Options.COMPRESSED_DATA
                                                  )
-                                                 .withStorage(
-                                                     CuratorCacheStorage.dataNotCached()
-                                                 )
                                                  .build();
 
           cache.listenable().addListener(
