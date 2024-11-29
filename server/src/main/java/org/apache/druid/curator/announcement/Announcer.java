@@ -46,6 +46,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Announces things on Zookeeper.
@@ -129,6 +130,15 @@ public class Announcer
         throw new RuntimeException(e);
       }
       finally {
+        cacheExecutorService.shutdown();
+        try {
+          if (!cacheExecutorService.awaitTermination(60, TimeUnit.SECONDS)) {
+            cacheExecutorService.shutdownNow();
+          }
+        } catch (InterruptedException e) {
+          cacheExecutorService.shutdownNow();
+          Thread.currentThread().interrupt(); // Restore interruption status
+        }
         cacheExecutorService.shutdown();
       }
 
@@ -217,6 +227,9 @@ public class Announcer
           final CuratorCache cache = CuratorCache.builder(curator, parentPath)
                                                  .withOptions(
                                                      CuratorCache.Options.COMPRESSED_DATA
+                                                 )
+                                                 .withStorage(
+                                                     CuratorCacheStorage.dataNotCached()
                                                  )
                                                  .build();
 
