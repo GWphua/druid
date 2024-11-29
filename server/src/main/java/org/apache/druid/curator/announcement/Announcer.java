@@ -55,27 +55,17 @@ public class Announcer
   private static final Logger log = new Logger(Announcer.class);
 
   private final CuratorFramework curator;
-  private final ExecutorService pathChildrenCacheExecutor;
+  private final ExecutorService cacheExecutorService;
 
   private final List<Announceable> toAnnounce = new ArrayList<>();
   private final List<Announceable> toUpdate = new ArrayList<>();
   private final ConcurrentMap<String, CuratorCache> listeners = new ConcurrentHashMap<>();
   private final ConcurrentMap<String, ConcurrentMap<String, byte[]>> announcements = new ConcurrentHashMap<>();
   private final List<String> parentsIBuilt = new CopyOnWriteArrayList<>();
+  private boolean started = false;
 
   // Used for testing
   private Set<String> addedChildren;
-
-  private boolean started = false;
-
-  public Announcer(
-      CuratorFramework curator,
-      ExecutorService exec
-  )
-  {
-    this.curator = curator;
-    this.pathChildrenCacheExecutor = exec;
-  }
 
   @VisibleForTesting
   void initializeAddedChildren()
@@ -87,6 +77,15 @@ public class Announcer
   Set<String> getAddedChildren()
   {
     return addedChildren;
+  }
+
+  public Announcer(
+      CuratorFramework curator,
+      ExecutorService exec
+  )
+  {
+    this.curator = curator;
+    this.cacheExecutorService = exec;
   }
 
   @LifecycleStart
@@ -130,7 +129,7 @@ public class Announcer
         throw new RuntimeException(e);
       }
       finally {
-        pathChildrenCacheExecutor.shutdown();
+        cacheExecutorService.shutdown();
       }
 
       for (Map.Entry<String, ConcurrentMap<String, byte[]>> entry : announcements.entrySet()) {
@@ -226,33 +225,31 @@ public class Announcer
 
           cache.listenable().addListener(
               (type, oldData, newData) -> {
-                // NOTE: ZooKeeper does not guarantee that we will get every event, and thus PathChildrenCache doesn't
-                //  as well. If one of the below events are missed, Announcer might not work properly.
-                log.debug("Path[%s] got event type[%s]", parentPath, type);
-                switch (type) {
-                  case NODE_DELETED:
-                    // If the node is deleted, we try to reinstate the node.
-                    final String pathOfDeletedNode = oldData.getPath();
-                    final byte[] value = finalSubPaths.get(ZKPaths.getPathAndNode(pathOfDeletedNode).getNode());
-                    if (value != null) {
-                      log.info("Node[%s] dropped, reinstating.", pathOfDeletedNode);
-                      try {
-                        createAnnouncement(pathOfDeletedNode, value);
+                cacheExecutorService.submit(() -> {
+                  // NOTE: ZooKeeper does not guarantee that we will get every event, and thus PathChildrenCache doesn't
+                  //  as well. If one of the below events are missed, Announcer might not work properly.
+                  log.debug("Path[%s] got event type[%s]", parentPath, type);
+                  switch (type) {
+                    case NODE_DELETED:
+                      // If the node is deleted, we try to reinstate the node.
+                      final String pathOfDeletedNode = oldData.getPath();
+                      final byte[] value = finalSubPaths.get(ZKPaths.getPathAndNode(pathOfDeletedNode).getNode());
+                      if (value != null) {
+                        log.info("Node[%s] dropped, reinstating.", pathOfDeletedNode);
+                        try {
+                          createAnnouncement(pathOfDeletedNode, value);
+                        }
+                        catch (Exception e) {
+                          throw new RuntimeException(e);
+                        }
                       }
-                      catch (Exception e) {
-                        throw new RuntimeException(e);
-                      }
-                    }
-                    break;
-                  case NODE_CREATED:
-                    if (addedChildren != null) {
-                      final String pathOfCreatedNode = newData.getPath();
-                      addedChildren.add(pathOfCreatedNode);
-                    }
-                    // fall through
-                  case NODE_CHANGED:
-                    // do nothing
-                }
+                      break;
+                    case NODE_CREATED:
+                    case NODE_CHANGED:
+                    default:
+                      // do nothing
+                  }
+                });
               }
           );
 
