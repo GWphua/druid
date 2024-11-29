@@ -245,6 +245,9 @@ public class Announcer
                       }
                       break;
                     case NODE_CREATED:
+                      if (addedChildren != null) {
+                        addedChildren.add(newData.getPath());
+                      }
                     case NODE_CHANGED:
                     default:
                       // do nothing
