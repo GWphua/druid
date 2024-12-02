@@ -20,9 +20,10 @@
 package org.apache.druid.curator.announcement;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.google.errorprone.annotations.concurrent.GuardedBy;
 import org.apache.curator.framework.CuratorFramework;
-import org.apache.curator.framework.api.transaction.CuratorTransaction;
-import org.apache.curator.framework.api.transaction.CuratorTransactionFinal;
+import org.apache.curator.framework.api.transaction.CuratorMultiTransaction;
+import org.apache.curator.framework.api.transaction.CuratorOp;
 import org.apache.curator.framework.recipes.cache.ChildData;
 import org.apache.curator.framework.recipes.cache.PathChildrenCache;
 import org.apache.curator.framework.recipes.cache.PathChildrenCacheEvent;
@@ -53,7 +54,13 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * Announces things on Zookeeper.
+ * The {@link Announcer} class manages the announcement of a node, and watches all child
+ * nodes under the specified path in a ZooKeeper ensemble. It monitors these nodes
+ * to ensure their existence and manage their lifecycle collectively.
+ *
+ * <p>Use this class when you need to manage the lifecycle of all child nodes under the
+ * specified path. Should your use case involve the management of a standalone node
+ * instead, see {@link NodeAnnouncer}.</p>
  */
 public class Announcer
 {
@@ -63,11 +70,13 @@ public class Announcer
   private final PathChildrenCacheFactory factory;
   private final ExecutorService pathChildrenCacheExecutor;
 
+  @GuardedBy("toAnnounce")
   private final List<Announceable> toAnnounce = new ArrayList<>();
+  @GuardedBy("toAnnounce")
   private final List<Announceable> toUpdate = new ArrayList<>();
   private final ConcurrentMap<String, PathChildrenCache> listeners = new ConcurrentHashMap<>();
   private final ConcurrentMap<String, ConcurrentMap<String, byte[]>> announcements = new ConcurrentHashMap<>();
-  private final List<String> parentsIBuilt = new CopyOnWriteArrayList<String>();
+  private final List<String> parentsIBuilt = new CopyOnWriteArrayList<>();
 
   // Used for testing
   private Set<String> addedChildren;
@@ -154,20 +163,23 @@ public class Announcer
       }
 
       if (!parentsIBuilt.isEmpty()) {
-        CuratorTransaction transaction = curator.inTransaction();
+        CuratorMultiTransaction transaction = curator.transaction();
+
+        ArrayList<CuratorOp> operations = new ArrayList<>();
         for (String parent : parentsIBuilt) {
           try {
-            transaction = transaction.delete().forPath(parent).and();
+            operations.add(curator.transactionOp().delete().forPath(parent));
           }
           catch (Exception e) {
-            log.info(e, "Unable to delete parent[%s], boooo.", parent);
+            log.info(e, "Unable to delete parent[%s].", parent);
           }
         }
+
         try {
-          ((CuratorTransactionFinal) transaction).commit();
+          transaction.forOperations(operations);
         }
         catch (Exception e) {
-          log.info(e, "Unable to commit transaction. Please feed the hamsters");
+          log.info(e, "Unable to commit transaction.");
         }
       }
     }
@@ -218,7 +230,7 @@ public class Announcer
       // I don't have a watcher on this path yet, create a Map and start watching.
       announcements.putIfAbsent(parentPath, new ConcurrentHashMap<>());
 
-      // Guaranteed to be non-null, but might be a map put in there by another thread.
+      // Guaranteed to be non-null, but might be a map put in here by another thread.
       final ConcurrentMap<String, byte[]> finalSubPaths = announcements.get(parentPath);
 
       // Synchronize to make sure that I only create a listener once.
@@ -228,7 +240,7 @@ public class Announcer
           cache.getListenable().addListener(
               new PathChildrenCacheListener()
               {
-                private final AtomicReference<Set<String>> pathsLost = new AtomicReference<Set<String>>(null);
+                private final AtomicReference<Set<String>> pathsLost = new AtomicReference<>(null);
 
                 @Override
                 public void childEvent(CuratorFramework client, PathChildrenCacheEvent event) throws Exception
@@ -347,7 +359,7 @@ public class Announcer
     ConcurrentMap<String, byte[]> subPaths = announcements.get(parentPath);
 
     if (subPaths == null || subPaths.get(nodePath) == null) {
-      throw new ISE("Cannot update a path[%s] that hasn't been announced!", path);
+      throw new ISE("Cannot update path[%s] that hasn't been announced!", path);
     }
 
     synchronized (toAnnounce) {
@@ -397,10 +409,11 @@ public class Announcer
     log.info("Unannouncing [%s]", path);
 
     try {
-      curator.inTransaction().delete().forPath(path).and().commit();
+      CuratorOp deleteOp = curator.transactionOp().delete().forPath(path);
+      curator.transaction().forOperations(deleteOp);
     }
     catch (KeeperException.NoNodeException e) {
-      log.info("Node[%s] didn't exist anyway...", path);
+      log.info("Unannounced node[%s] that does not exist.", path);
     }
     catch (Exception e) {
       throw new RuntimeException(e);
@@ -428,20 +441,6 @@ public class Announcer
     }
     catch (Exception e) {
       log.info(e, "Problem creating parentPath[%s], someone else created it first?", parentPath);
-    }
-  }
-
-  private static class Announceable
-  {
-    final String path;
-    final byte[] bytes;
-    final boolean removeParentsIfCreated;
-
-    public Announceable(String path, byte[] bytes, boolean removeParentsIfCreated)
-    {
-      this.path = path;
-      this.bytes = bytes;
-      this.removeParentsIfCreated = removeParentsIfCreated;
     }
   }
 }
