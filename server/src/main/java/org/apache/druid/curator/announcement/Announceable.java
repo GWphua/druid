@@ -35,11 +35,32 @@ class Announceable
   final byte[] bytes;
 
   /**
-   * Indicates whether parent nodes should be removed if the announcement is created successfully.
+   * Indicates whether parent nodes created by this announcement should be removed during unannouncement.
    * This can be useful for cleaning up unused paths in ZooKeeper.
    */
   final boolean removeParentsIfCreated;
 
+  /**
+   * Used mainly for updating Announcing data, where the functionality of removing parent nodes are not applicable.
+   *
+   * @param path  Represents the path in ZooKeeper where the announcement will be made.
+   * @param bytes Holds the actual data to be announced.
+   */
+  public Announceable(String path, byte[] bytes)
+  {
+    this.path = path;
+    this.bytes = bytes;
+    this.removeParentsIfCreated = false;
+  }
+
+  /**
+   * Use when there is no need to remove created parent nodes when announcing this announceable instance.
+   *
+   * @param path                   Represents the path in ZooKeeper where the announcement will be made.
+   * @param bytes                  Holds the actual data to be announced.
+   * @param removeParentsIfCreated Indicates whether parent nodes created by this announcement should be removed
+   *                               during unannouncement.
+   */
   public Announceable(String path, byte[] bytes, boolean removeParentsIfCreated)
   {
     this.path = path;

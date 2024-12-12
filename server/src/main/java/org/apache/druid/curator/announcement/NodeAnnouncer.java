@@ -299,6 +299,7 @@ public class NodeAnnouncer
       if (oldBytes == null) {
         return bytes; // Insert the new value
       } else if (!Arrays.equals(oldBytes, bytes)) {
+        // We have already announced the node...
         throw new IAE("Cannot reannounce different values under the same path.");
       }
       return oldBytes; // No change if values are equal
@@ -313,8 +314,7 @@ public class NodeAnnouncer
     synchronized (toAnnounce) {
       if (!started) {
         log.debug("NodeAnnouncer has not started yet, queuing updates for later processing...");
-        // removeParentsIfCreated is not relevant for updates; use dummy value "false".
-        toUpdate.add(new Announceable(path, bytes, false));
+        toUpdate.add(new Announceable(path, bytes));
         return;
       }
 

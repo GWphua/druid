@@ -208,7 +208,8 @@ public class Announcer
    *
    * @param path                  The path to announce at
    * @param bytes                 The payload to announce
-   * @param removeParentIfCreated remove parent of "path" if we had created that parent during announcement
+   * @param removeParentIfCreated When {@link #stop()} is called, remove parent of "path" if we had created that
+   *                              parent during announcement
    */
   public void announce(String path, byte[] bytes, boolean removeParentIfCreated)
   {
@@ -355,8 +356,7 @@ public class Announcer
   {
     synchronized (toAnnounce) {
       if (!started) {
-        // removeParentsIfCreated is not relevant for updates; use dummy value "false".
-        toUpdate.add(new Announceable(path, bytes, false));
+        toUpdate.add(new Announceable(path, bytes));
         return;
       }
     }
