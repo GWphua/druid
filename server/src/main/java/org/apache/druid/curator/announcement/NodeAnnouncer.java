@@ -25,7 +25,8 @@ import org.apache.curator.framework.CuratorFramework;
 import org.apache.curator.framework.api.transaction.CuratorMultiTransaction;
 import org.apache.curator.framework.api.transaction.CuratorOp;
 import org.apache.curator.framework.recipes.cache.ChildData;
-import org.apache.curator.framework.recipes.cache.NodeCache;
+import org.apache.curator.framework.recipes.cache.CuratorCache;
+import org.apache.curator.framework.recipes.cache.CuratorCacheListener;
 import org.apache.druid.java.util.common.IAE;
 import org.apache.druid.java.util.common.ISE;
 import org.apache.druid.java.util.common.lifecycle.LifecycleStart;
@@ -63,9 +64,9 @@ public class NodeAnnouncer
   private static final Logger log = new Logger(NodeAnnouncer.class);
 
   private final CuratorFramework curator;
-  private final ExecutorService nodeCacheExecutor;
+  private final ExecutorService executorService;
 
-  private final ConcurrentMap<String, NodeCache> listeners = new ConcurrentHashMap<>();
+  private final ConcurrentMap<String, CuratorCache> listeners = new ConcurrentHashMap<>();
   private final ConcurrentHashMap<String, byte[]> announcedPaths = new ConcurrentHashMap<>();
 
   @GuardedBy("toAnnounce")
@@ -98,7 +99,7 @@ public class NodeAnnouncer
   public NodeAnnouncer(CuratorFramework curator, ExecutorService exec)
   {
     this.curator = curator;
-    this.nodeCacheExecutor = exec;
+    this.executorService = exec;
   }
 
   @VisibleForTesting
@@ -157,7 +158,7 @@ public class NodeAnnouncer
       throw new RuntimeException(e);
     }
     finally {
-      nodeCacheExecutor.shutdown();
+      executorService.shutdown();
     }
 
     for (String announcementPath : announcedPaths.keySet()) {
@@ -233,7 +234,7 @@ public class NodeAnnouncer
       // Synchronize to make sure that I only create a listener once.
       synchronized (toAnnounce) {
         if (!listeners.containsKey(path)) {
-          final NodeCache cache = setupNodeCache(path);
+          final CuratorCache cache = createCacheForPath(path);
 
           if (started) {
             if (buildParentPath) {
@@ -259,30 +260,30 @@ public class NodeAnnouncer
   }
 
   @GuardedBy("toAnnounce")
-  private NodeCache setupNodeCache(String path)
+  private CuratorCache createCacheForPath(String path)
   {
-    final NodeCache cache = new NodeCache(curator, path, true);
-    cache.getListenable().addListener(
-        () -> nodeCacheExecutor.submit(() -> {
-          ChildData currentData = cache.getCurrentData();
+    final CuratorCache cache = CuratorCache.build(curator, path, CuratorCache.Options.SINGLE_NODE_CACHE);
 
-          if (currentData == null) {
-            // If currentData is null, and we know we have already announced the data,
-            // this means that the ephemeral node was unexpectedly removed.
-            // We will recreate the node again using the previous data.
-            final byte[] previouslyAnnouncedData = announcedPaths.get(path);
-            if (previouslyAnnouncedData != null) {
-              log.info("Node[%s] dropped, reinstating.", path);
-              try {
-                createAnnouncement(path, previouslyAnnouncedData);
-              }
-              catch (Exception e) {
-                throw new RuntimeException(e);
+    cache.listenable().addListener(
+        new CuratorCacheListener()
+        {
+          @Override
+          public void event(Type type, ChildData oldData, ChildData data)
+          {
+            if (type == Type.NODE_DELETED) {
+              final byte[] previouslyAnnouncedData = announcedPaths.get(path);
+              if (previouslyAnnouncedData != null) {
+                try {
+                  createAnnouncement(path, previouslyAnnouncedData);
+                }
+                catch (Exception e) {
+                  throw new RuntimeException(e);
+                }
               }
             }
           }
-        })
-    );
+        } , executorService);
+
     return cache;
   }
 
@@ -381,7 +382,7 @@ public class NodeAnnouncer
     }
   }
 
-  private void startCache(NodeCache cache)
+  private void startCache(CuratorCache cache)
   {
     try {
       cache.start();
