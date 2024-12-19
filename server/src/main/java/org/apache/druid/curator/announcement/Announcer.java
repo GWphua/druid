@@ -25,6 +25,9 @@ import org.apache.curator.framework.CuratorFramework;
 import org.apache.curator.framework.api.transaction.CuratorMultiTransaction;
 import org.apache.curator.framework.api.transaction.CuratorOp;
 import org.apache.curator.framework.recipes.cache.ChildData;
+import org.apache.curator.framework.recipes.cache.CuratorCache;
+import org.apache.curator.framework.recipes.cache.CuratorCacheBuilder;
+import org.apache.curator.framework.recipes.cache.CuratorCacheListener;
 import org.apache.curator.framework.recipes.cache.PathChildrenCache;
 import org.apache.curator.framework.recipes.cache.PathChildrenCacheEvent;
 import org.apache.curator.framework.recipes.cache.PathChildrenCacheListener;
@@ -35,6 +38,7 @@ import org.apache.druid.java.util.common.ISE;
 import org.apache.druid.java.util.common.lifecycle.LifecycleStart;
 import org.apache.druid.java.util.common.lifecycle.LifecycleStop;
 import org.apache.druid.java.util.common.logger.Logger;
+import org.apache.druid.server.ZKPathsUtils;
 import org.apache.druid.utils.CloseableUtils;
 import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.KeeperException;
@@ -69,14 +73,13 @@ public class Announcer
   private static final Logger log = new Logger(Announcer.class);
 
   private final CuratorFramework curator;
-  private final PathChildrenCacheFactory factory;
   private final ExecutorService pathChildrenCacheExecutor;
 
   @GuardedBy("toAnnounce")
   private final List<Announceable> toAnnounce = new ArrayList<>();
   @GuardedBy("toAnnounce")
   private final List<Announceable> toUpdate = new ArrayList<>();
-  private final ConcurrentMap<String, PathChildrenCache> listeners = new ConcurrentHashMap<>();
+  private final ConcurrentMap<String, CuratorCache> listeners = new ConcurrentHashMap<>();
   private final ConcurrentMap<String, ConcurrentMap<String, byte[]>> announcements = new ConcurrentHashMap<>();
   private final List<String> parentsIBuilt = new CopyOnWriteArrayList<>();
 
@@ -92,12 +95,6 @@ public class Announcer
   {
     this.curator = curator;
     this.pathChildrenCacheExecutor = exec;
-    this.factory = new PathChildrenCacheFactory.Builder()
-        .withCacheData(false)
-        .withCompressed(true)
-        .withExecutorService(exec)
-        .withShutdownExecutorOnClose(false)
-        .build();
   }
 
   @VisibleForTesting
@@ -247,72 +244,30 @@ public class Announcer
       // Synchronize to make sure that I only create a listener once.
       synchronized (finalSubPaths) {
         if (!listeners.containsKey(parentPath)) {
-          final PathChildrenCache cache = factory.make(curator, parentPath);
-          cache.getListenable().addListener(
-              new PathChildrenCacheListener()
-              {
-                private final AtomicReference<Set<String>> pathsLost = new AtomicReference<>(null);
+          final CuratorCache cache = CuratorCache.builder(curator, parentPath).withOptions(CuratorCache.Options.COMPRESSED_DATA).build();
 
-                @Override
-                public void childEvent(CuratorFramework client, PathChildrenCacheEvent event) throws Exception
-                {
-                  // NOTE: ZooKeeper does not guarantee that we will get every event, and thus PathChildrenCache doesn't
-                  // as well. If one of the below events are missed, Announcer might not work properly.
-                  log.debug("Path[%s] got event[%s]", parentPath, event);
-                  switch (event.getType()) {
-                    case CHILD_REMOVED:
-                      final ChildData child = event.getData();
-                      final ZKPaths.PathAndNode childPath = ZKPaths.getPathAndNode(child.getPath());
-                      final byte[] value = finalSubPaths.get(childPath.getNode());
-                      if (value != null) {
-                        log.info("Node[%s] dropped, reinstating.", child.getPath());
-                        createAnnouncement(child.getPath(), value);
-                      }
-                      break;
-                    case CONNECTION_LOST:
-                      // Lost connection, which means session is broken, take inventory of what has been seen.
-                      // This is to protect from a race condition in which the ephemeral node could have been
-                      // created but not actually seen by the PathChildrenCache, which means that it won't know
-                      // that it disappeared and thus will not generate a CHILD_REMOVED event for us.  Under normal
-                      // circumstances, this can only happen upon connection loss; but technically if you have
-                      // an adversary in the system, they could also delete the ephemeral node before the cache sees
-                      // it.  This does not protect from that case, so don't have adversaries.
-
-                      Set<String> pathsToReinstate = new HashSet<>();
-                      for (String node : finalSubPaths.keySet()) {
-                        String path = ZKPaths.makePath(parentPath, node);
-                        log.info("Node[%s] is added to reinstate.", path);
-                        pathsToReinstate.add(path);
-                      }
-
-                      if (!pathsToReinstate.isEmpty() && !pathsLost.compareAndSet(null, pathsToReinstate)) {
-                        log.info("Already had a pathsLost set!?[%s]", parentPath);
-                      }
-                      break;
-                    case CONNECTION_RECONNECTED:
-                      final Set<String> thePathsLost = pathsLost.getAndSet(null);
-
-                      if (thePathsLost != null) {
-                        for (String path : thePathsLost) {
-                          log.info("Reinstating [%s]", path);
-                          final ZKPaths.PathAndNode split = ZKPaths.getPathAndNode(path);
-                          createAnnouncement(path, announcements.get(split.getPath()).get(split.getNode()));
-                        }
-                      }
-                      break;
-                    case CHILD_ADDED:
-                      if (addedChildren != null) {
-                        addedChildren.add(event.getData().getPath());
-                      }
-                      // fall through
-                    case INITIALIZED:
-                    case CHILD_UPDATED:
-                    case CONNECTION_SUSPENDED:
-                      // do nothing
+          cache.listenable().addListener(new CuratorCacheListener()
+          {
+            @Override
+            public void event(Type type, ChildData oldData, ChildData data)
+            {
+              switch(type) {
+                case NODE_DELETED:
+                  final ZKPaths.PathAndNode childPath = ZKPaths.getPathAndNode(data.getPath());
+                  final byte[] value = finalSubPaths.get(childPath.getNode());
+                  if (value != null) {
+                    log.info("Node[%s] dropped, reinstating.", data.getPath());
+                    createAnnouncement(data.getPath(), value);
                   }
-                }
+                  break;
+                case NODE_CREATED:
+                  if (addedChildren != null) {
+                    addedChildren.add(data.getPath());
+                  }
+                  break;
               }
-          );
+            }
+          }, pathChildrenCacheExecutor);
 
           synchronized (toAnnounce) {
             if (started) {
@@ -387,14 +342,28 @@ public class Announcer
     }
   }
 
-  private String createAnnouncement(final String path, byte[] value) throws Exception
+  private void createAnnouncement(final String path, byte[] value)
   {
-    return curator.create().compressed().withMode(CreateMode.EPHEMERAL).inBackground().forPath(path, value);
+    try {
+      curator.create().compressed().withMode(CreateMode.EPHEMERAL).inBackground().forPath(path, value);
+    } catch (KeeperException.NodeExistsException e) {
+      log.info(e, "Problem creating parentPath[%s], someone else created it first?", path);
+    }
+    catch (Exception e) {
+      log.error(e, "Unhandled exception when creating parentPath[%s].", path);
+    }
   }
 
-  private Stat updateAnnouncement(final String path, final byte[] value) throws Exception
+  private void updateAnnouncement(final String path, final byte[] value)
   {
-    return curator.setData().compressed().inBackground().forPath(path, value);
+    try {
+      curator.setData().compressed().inBackground().forPath(path, value);
+    } catch (KeeperException.NodeExistsException e) {
+      log.info(e, "Problem creating parentPath[%s], someone else created it first?", path);
+    }
+    catch (Exception e) {
+      log.error(e, "Unhandled exception when creating parentPath[%s].", path);
+    }
   }
 
   /**
@@ -433,7 +402,7 @@ public class Announcer
     }
   }
 
-  private void startCache(PathChildrenCache cache)
+  private void startCache(CuratorCache cache)
   {
     try {
       cache.start();

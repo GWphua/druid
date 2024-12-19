@@ -28,7 +28,7 @@ public class ZKPathsUtils
     return ZKPaths.getPathAndNode(path).getPath();
   }
 
-  public static String getParentNode(String path)
+  public static String getNode(String path)
   {
     return ZKPaths.getPathAndNode(path).getNode();
   }
