@@ -48,7 +48,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * The {@link Announcer} class manages the announcement of a node, and watches all child
@@ -237,14 +236,16 @@ public class Announcer
       // Synchronize to make sure that I only create a listener once.
       synchronized (finalSubPaths) {
         if (!listeners.containsKey(parentPath)) {
-          final CuratorCache cache = CuratorCache.builder(curator, parentPath).withOptions(CuratorCache.Options.COMPRESSED_DATA).build();
+          final CuratorCache cache = CuratorCache.builder(curator, parentPath)
+                                                 .withOptions(CuratorCache.Options.COMPRESSED_DATA)
+                                                 .build();
 
           cache.listenable().addListener(new CuratorCacheListener()
           {
             @Override
             public void event(Type type, ChildData oldData, ChildData data)
             {
-              switch(type) {
+              switch (type) {
                 case NODE_DELETED:
                   final ZKPaths.PathAndNode childPath = ZKPaths.getPathAndNode(data.getPath());
                   final byte[] value = finalSubPaths.get(childPath.getNode());
@@ -258,6 +259,7 @@ public class Announcer
                     addedChildren.add(data.getPath());
                   }
                   break;
+                case NODE_CHANGED:
               }
             }
           }, pathChildrenCacheExecutor);
@@ -339,7 +341,8 @@ public class Announcer
   {
     try {
       curator.create().compressed().withMode(CreateMode.EPHEMERAL).inBackground().forPath(path, value);
-    } catch (KeeperException.NodeExistsException e) {
+    }
+    catch (KeeperException.NodeExistsException e) {
       log.info(e, "Problem creating parentPath[%s], someone else created it first?", path);
     }
     catch (Exception e) {
@@ -351,7 +354,8 @@ public class Announcer
   {
     try {
       curator.setData().compressed().inBackground().forPath(path, value);
-    } catch (KeeperException.NodeExistsException e) {
+    }
+    catch (KeeperException.NodeExistsException e) {
       log.info(e, "Problem creating parentPath[%s], someone else created it first?", path);
     }
     catch (Exception e) {
