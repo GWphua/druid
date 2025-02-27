@@ -47,10 +47,9 @@ public class AnnouncerModule implements Module
   private boolean isZkEnabled = true;
 
   @Inject
-  public void configure(Properties properties, CuratorConfig config)
+  public void configure(Properties properties)
   {
     isZkEnabled = ZkEnablementConfig.isEnabled(properties);
-    announcerCacheType = config.getAnnouncerCacheType();
   }
 
   @Override
