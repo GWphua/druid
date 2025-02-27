@@ -116,10 +116,7 @@ public class BatchServerInventoryViewTest
 
     jsonMapper = TestHelper.makeJsonMapper();
 
-    announcer = new Announcer(
-        cf,
-        Execs.directExecutor()
-    );
+    announcer = new Announcer(cf, Execs.directExecutor());
     announcer.start();
 
     DruidServerMetadata serverMetadata = new DruidServerMetadata(
@@ -425,7 +422,10 @@ public class BatchServerInventoryViewTest
   public void testSameTimeZnode() throws Exception
   {
     final int numThreads = INITIAL_SEGMENTS / 10;
-    final ListeningExecutorService executor = MoreExecutors.listeningDecorator(Execs.multiThreaded(numThreads, "BatchServerInventoryViewTest-%d"));
+    final ListeningExecutorService executor = MoreExecutors.listeningDecorator(Execs.multiThreaded(
+        numThreads,
+        "BatchServerInventoryViewTest-%d"
+    ));
 
     segmentAnnouncer.announceSegments(testSegments);
 

@@ -70,10 +70,7 @@ public class CuratorDruidNodeAnnouncerAndDiscoveryTest extends CuratorTestBase
     curator.start();
     curator.blockUntilConnected();
 
-    Announcer announcer = new Announcer(
-        curator,
-        Execs.directExecutor()
-    );
+    Announcer announcer = new Announcer(curator, Execs.directExecutor());
     announcer.start();
 
     CuratorDruidNodeAnnouncer druidNodeAnnouncer = new CuratorDruidNodeAnnouncer(

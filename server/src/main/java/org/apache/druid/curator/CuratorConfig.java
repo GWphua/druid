@@ -29,6 +29,8 @@ import javax.validation.constraints.Min;
 public class CuratorConfig
 {
   public static final String CONFIG_PREFIX = "druid.zk.service";
+  public static final String PATH_BASED_CACHE_TYPE = "path";
+  public static final String NODE_BASED_CACHE_TYPE = "node";
 
   static final String HOST = "host";
   @JsonProperty(HOST)
@@ -62,6 +64,9 @@ public class CuratorConfig
   // Smaller retry counts helps nodes to fail fast in case of ZK connection loss.
   @JsonProperty("maxZkRetries")
   private int maxZkRetries = 29;
+
+  @JsonProperty("announcerCacheType")
+  private String announcerCacheType;
 
   public static CuratorConfig create(String hosts)
   {
@@ -140,5 +145,15 @@ public class CuratorConfig
   public int getMaxZkRetries()
   {
     return maxZkRetries;
+  }
+
+  public String getAnnouncerCacheType()
+  {
+    return announcerCacheType;
+  }
+
+  public void setAnnouncerCacheType(String announcerCacheType)
+  {
+    this.announcerCacheType = announcerCacheType;
   }
 }

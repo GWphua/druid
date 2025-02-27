@@ -24,8 +24,11 @@ import com.google.inject.Inject;
 import com.google.inject.Module;
 import com.google.inject.Provides;
 import org.apache.curator.framework.CuratorFramework;
+import org.apache.druid.curator.CuratorConfig;
 import org.apache.druid.curator.ZkEnablementConfig;
 import org.apache.druid.curator.announcement.Announcer;
+import org.apache.druid.curator.announcement.AnnouncerService;
+import org.apache.druid.curator.announcement.NodeAnnouncer;
 import org.apache.druid.java.util.common.concurrent.Execs;
 import org.apache.druid.server.coordination.BatchDataSegmentAnnouncer;
 import org.apache.druid.server.coordination.CuratorDataSegmentServerAnnouncer;
@@ -35,6 +38,7 @@ import org.apache.druid.server.coordination.DataSegmentServerAnnouncer;
 import org.apache.druid.server.initialization.BatchDataSegmentAnnouncerConfig;
 
 import java.util.Properties;
+import java.util.concurrent.ExecutorService;
 
 /**
  */
@@ -65,8 +69,17 @@ public class AnnouncerModule implements Module
 
   @Provides
   @ManageLifecycleAnnouncements
-  public Announcer getAnnouncer(CuratorFramework curator)
+  public AnnouncerService provideAnnouncerService(CuratorFramework curator, CuratorConfig config)
   {
-    return new Announcer(curator, Execs.singleThreaded("Announcer-%s"));
+    final String announcerCacheType = config.getAnnouncerCacheType();
+    final ExecutorService announcerExecutorService = Execs.singleThreaded("Announcer-%s");
+
+    if (CuratorConfig.PATH_BASED_CACHE_TYPE.equals(announcerCacheType)) {
+      return new Announcer(curator, announcerExecutorService);
+    } else if (CuratorConfig.NODE_BASED_CACHE_TYPE.equals(announcerCacheType)) {
+      return new NodeAnnouncer(curator, announcerExecutorService);
+    } else {
+      throw new IllegalArgumentException("Unknown announcer cache type: " + announcerCacheType);
+    }
   }
 }
