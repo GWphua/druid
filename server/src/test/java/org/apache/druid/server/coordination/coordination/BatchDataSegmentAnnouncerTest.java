@@ -31,7 +31,7 @@ import org.apache.curator.framework.CuratorFrameworkFactory;
 import org.apache.curator.retry.ExponentialBackoffRetry;
 import org.apache.curator.test.TestingCluster;
 import org.apache.druid.curator.PotentiallyGzippedCompressionProvider;
-import org.apache.druid.curator.announcement.NodeAnnouncer;
+import org.apache.druid.curator.announcement.Announcer;
 import org.apache.druid.java.util.common.DateTimes;
 import org.apache.druid.java.util.common.concurrent.Execs;
 import org.apache.druid.segment.TestHelper;
@@ -625,7 +625,7 @@ public class BatchDataSegmentAnnouncerTest
     }
   }
 
-  private static class TestAnnouncer extends NodeAnnouncer
+  private static class TestAnnouncer extends Announcer
   {
     private final ConcurrentHashMap<String, ConcurrentHashMap<byte[], AtomicInteger>> numPathAnnounced = new ConcurrentHashMap<>();
 

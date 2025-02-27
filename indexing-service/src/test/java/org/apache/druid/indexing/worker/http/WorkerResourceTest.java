@@ -26,6 +26,7 @@ import org.apache.curator.retry.ExponentialBackoffRetry;
 import org.apache.curator.test.TestingCluster;
 import org.apache.druid.curator.PotentiallyGzippedCompressionProvider;
 import org.apache.druid.curator.ZkEnablementConfig;
+import org.apache.druid.curator.announcement.Announcer;
 import org.apache.druid.indexing.overlord.config.RemoteTaskRunnerConfig;
 import org.apache.druid.indexing.worker.Worker;
 import org.apache.druid.indexing.worker.WorkerCuratorCoordinator;
@@ -33,6 +34,7 @@ import org.apache.druid.indexing.worker.WorkerTaskMonitor;
 import org.apache.druid.indexing.worker.config.WorkerConfig;
 import org.apache.druid.jackson.DefaultObjectMapper;
 import org.apache.druid.java.util.common.StringUtils;
+import org.apache.druid.java.util.common.concurrent.Execs;
 import org.apache.druid.server.initialization.IndexerZkConfig;
 import org.apache.druid.server.initialization.ZkPathsConfig;
 import org.easymock.EasyMock;
@@ -53,6 +55,7 @@ public class WorkerResourceTest
 
   private TestingCluster testingCluster;
   private CuratorFramework cf;
+  private Announcer announcer = new Announcer(cf, Execs.directExecutor());
 
   private Worker worker;
 
@@ -95,7 +98,8 @@ public class WorkerResourceTest
         }, null, null, null, null),
         new RemoteTaskRunnerConfig(),
         cf,
-        worker
+        worker,
+        announcer
     );
     curatorCoordinator.start();
 

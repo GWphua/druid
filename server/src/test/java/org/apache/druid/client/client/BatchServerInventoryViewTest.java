@@ -38,7 +38,7 @@ import org.apache.druid.client.BatchServerInventoryView;
 import org.apache.druid.client.DruidServer;
 import org.apache.druid.client.ServerView;
 import org.apache.druid.curator.PotentiallyGzippedCompressionProvider;
-import org.apache.druid.curator.announcement.NodeAnnouncer;
+import org.apache.druid.curator.announcement.Announcer;
 import org.apache.druid.java.util.common.DateTimes;
 import org.apache.druid.java.util.common.ISE;
 import org.apache.druid.java.util.common.Pair;
@@ -88,7 +88,7 @@ public class BatchServerInventoryViewTest
   private TestingCluster testingCluster;
   private CuratorFramework cf;
   private ObjectMapper jsonMapper;
-  private NodeAnnouncer nodeAnnouncer;
+  private Announcer announcer;
   private BatchDataSegmentAnnouncer segmentAnnouncer;
   private DataSegmentServerAnnouncer serverAnnouncer;
   private Set<DataSegment> testSegments;
@@ -116,8 +116,8 @@ public class BatchServerInventoryViewTest
 
     jsonMapper = TestHelper.makeJsonMapper();
 
-    nodeAnnouncer = new NodeAnnouncer(cf, Execs.directExecutor());
-    nodeAnnouncer.start();
+    announcer = new Announcer(cf, Execs.directExecutor());
+    announcer.start();
 
     DruidServerMetadata serverMetadata = new DruidServerMetadata(
         "id",
@@ -141,7 +141,7 @@ public class BatchServerInventoryViewTest
     serverAnnouncer = new CuratorDataSegmentServerAnnouncer(
         serverMetadata,
         zkPathsConfig,
-        nodeAnnouncer,
+        announcer,
         jsonMapper
     );
     serverAnnouncer.announce();
@@ -157,7 +157,7 @@ public class BatchServerInventoryViewTest
           }
         },
         zkPathsConfig,
-        nodeAnnouncer,
+        announcer,
         jsonMapper
     );
 
@@ -222,7 +222,7 @@ public class BatchServerInventoryViewTest
     batchServerInventoryView.stop();
     filteredBatchServerInventoryView.stop();
     serverAnnouncer.unannounce();
-    nodeAnnouncer.stop();
+    announcer.stop();
     cf.close();
     testingCluster.stop();
   }
@@ -474,7 +474,7 @@ public class BatchServerInventoryViewTest
                           return TEST_BASE_PATH;
                         }
                       },
-                      nodeAnnouncer,
+                      announcer,
                       jsonMapper
                   );
                   List<DataSegment> segments = new ArrayList<>();

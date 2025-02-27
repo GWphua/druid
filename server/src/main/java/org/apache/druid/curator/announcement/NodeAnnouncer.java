@@ -21,6 +21,7 @@ package org.apache.druid.curator.announcement;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.errorprone.annotations.concurrent.GuardedBy;
+import com.google.inject.Provides;
 import org.apache.curator.framework.CuratorFramework;
 import org.apache.curator.framework.api.transaction.CuratorMultiTransaction;
 import org.apache.curator.framework.api.transaction.CuratorOp;
@@ -58,7 +59,7 @@ import java.util.concurrent.ExecutorService;
  * uses the PathChildrenCache recipe instead.
  * </p>
  */
-public class NodeAnnouncer
+public class NodeAnnouncer implements AnnouncerService
 {
   private static final Logger log = new Logger(NodeAnnouncer.class);
 
@@ -108,6 +109,7 @@ public class NodeAnnouncer
   }
 
   @LifecycleStart
+  @Override
   public void start()
   {
     log.debug("Starting NodeAnnouncer");
@@ -132,6 +134,7 @@ public class NodeAnnouncer
   }
 
   @LifecycleStop
+  @Override
   public void stop()
   {
     log.debug("Stopping NodeAnnouncer");
@@ -186,26 +189,13 @@ public class NodeAnnouncer
     }
   }
 
-  /**
-   * Overload of {@link #announce(String, byte[], boolean)}, but removes parent node of path after announcement.
-   */
+  @Override
   public void announce(String path, byte[] bytes)
   {
     announce(path, bytes, true);
   }
 
-  /**
-   * Announces the provided bytes at the given path.
-   *
-   * <p>
-   * Announcement using {@link NodeAnnouncer} will create an ephemeral znode at the specified path, and listens for
-   * changes on your znode. Your znode will exist until it is unannounced, or until {@link #stop()} is called.
-   * </p>
-   *
-   * @param path                  The path to announce at
-   * @param bytes                 The payload to announce
-   * @param removeParentIfCreated remove parent of "path" if we had created that parent during announcement
-   */
+  @Override
   public void announce(String path, byte[] bytes, boolean removeParentIfCreated)
   {
     synchronized (toAnnounce) {
@@ -307,6 +297,7 @@ public class NodeAnnouncer
     return Arrays.equals(updatedAnnouncementData, bytes);
   }
 
+  @Override
   public void update(final String path, final byte[] bytes)
   {
     synchronized (toAnnounce) {
@@ -345,14 +336,7 @@ public class NodeAnnouncer
     curator.setData().compressed().inBackground().forPath(path, value);
   }
 
-  /**
-   * Unannounces an announcement created at path.  Note that if all announcements get removed, the Announcer
-   * will continue to have ZK watches on paths because clearing them out is a source of ugly race conditions.
-   * <p/>
-   * If you need to completely clear all the state of what is being watched and announced, stop() the Announcer.
-   *
-   * @param path the path to unannounce
-   */
+  @Override
   public void unannounce(String path)
   {
     synchronized (toAnnounce) {

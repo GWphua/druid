@@ -38,7 +38,6 @@ import org.apache.druid.java.util.common.logger.Logger;
 import org.apache.druid.utils.CloseableUtils;
 import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.KeeperException;
-import org.apache.zookeeper.data.Stat;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -64,7 +63,7 @@ import java.util.concurrent.atomic.AtomicReference;
  * uses the NodeCache recipe instead.
  * </p>
  */
-public class Announcer
+public class Announcer implements AnnouncerService
 {
   private static final Logger log = new Logger(Announcer.class);
 
@@ -113,6 +112,7 @@ public class Announcer
   }
 
   @LifecycleStart
+  @Override
   public void start()
   {
     log.debug("Starting Announcer.");
@@ -136,6 +136,7 @@ public class Announcer
     }
   }
 
+  @Override
   @LifecycleStop
   public void stop()
   {
@@ -189,27 +190,13 @@ public class Announcer
     }
   }
 
-  /**
-   * Overload of {@link #announce(String, byte[], boolean)}, but removes parent node of path after announcement.
-   */
+  @Override
   public void announce(String path, byte[] bytes)
   {
     announce(path, bytes, true);
   }
 
-  /**
-   * Announces the provided bytes at the given path.
-   *
-   * <p>
-   * Announcement using {@link Announcer} will create an ephemeral znode at the specified path, and uses its parent
-   * path to watch all the siblings and children znodes of your specified path. The watched nodes will always exist
-   * until it is unannounced, or until {@link #stop()} is called.
-   * </p>
-   *
-   * @param path                  The path to announce at
-   * @param bytes                 The payload to announce
-   * @param removeParentIfCreated remove parent of "path" if we had created that parent during announcement
-   */
+  @Override
   public void announce(String path, byte[] bytes, boolean removeParentIfCreated)
   {
     synchronized (toAnnounce) {
@@ -351,6 +338,7 @@ public class Announcer
     }
   }
 
+  @Override
   public void update(final String path, final byte[] bytes)
   {
     synchronized (toAnnounce) {
@@ -387,24 +375,17 @@ public class Announcer
     }
   }
 
-  private String createAnnouncement(final String path, byte[] value) throws Exception
+  private void createAnnouncement(final String path, byte[] value) throws Exception
   {
-    return curator.create().compressed().withMode(CreateMode.EPHEMERAL).inBackground().forPath(path, value);
+    curator.create().compressed().withMode(CreateMode.EPHEMERAL).inBackground().forPath(path, value);
   }
 
-  private Stat updateAnnouncement(final String path, final byte[] value) throws Exception
+  private void updateAnnouncement(final String path, final byte[] value) throws Exception
   {
-    return curator.setData().compressed().inBackground().forPath(path, value);
+    curator.setData().compressed().inBackground().forPath(path, value);
   }
 
-  /**
-   * Unannounces an announcement created at path.  Note that if all announcements get removed, the Announcer
-   * will continue to have ZK watches on paths because clearing them out is a source of ugly race conditions.
-   * <p/>
-   * If you need to completely clear all the state of what is being watched and announced, stop() the Announcer.
-   *
-   * @param path the path to unannounce
-   */
+  @Override
   public void unannounce(String path)
   {
     final ZKPaths.PathAndNode pathAndNode = ZKPaths.getPathAndNode(path);
