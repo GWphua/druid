@@ -298,12 +298,12 @@ public abstract class SQLMetadataConnector implements MetadataStorageConnector
                 tableName, getPayloadType(), getQuoteString(), getCollation()
             ),
             StringUtils.format(
-                "CREATE INDEX idx_%1$s_datasource_end ON %1$s(dataSource, %2$send%2$s)",
+                "ALTER TABLE %1$s ADD INDEX idx_%1$s_datasource_end (dataSource, %2$send%2$s)",
                 tableName,
                 getQuoteString()
             ),
             StringUtils.format(
-                "CREATE INDEX idx_%1$s_datasource_sequence ON %1$s(dataSource, sequence_name)",
+                "ALTER TABLE %1$s ADD INDEX idx_%1$s_datasource_sequence (dataSource, sequence_name)",
                 tableName
             )
         )
@@ -365,9 +365,9 @@ public abstract class SQLMetadataConnector implements MetadataStorageConnector
                 createStatementBuilder.toString(),
                 tableName, getPayloadType(), getQuoteString(), getCollation()
             ),
-            StringUtils.format("CREATE INDEX idx_%1$s_used ON %1$s(used)", tableName),
+            StringUtils.format("ALTER TABLE %1$s ADD INDEX idx_%1$s_used (used)", tableName),
             StringUtils.format(
-                "CREATE INDEX idx_%1$s_datasource_used_end_start ON %1$s(dataSource, used, %2$send%2$s, start)",
+                "ALTER TABLE %1$s ADD INDEX idx_%1$s_datasource_used_end_start (dataSource, used, %2$send%2$s, start)",
                 tableName,
                 getQuoteString()
             )
@@ -390,10 +390,7 @@ public abstract class SQLMetadataConnector implements MetadataStorageConnector
                 + ")",
                 tableName, getSerialType()
             ),
-            StringUtils.format(
-                "CREATE INDEX idx_%1$s_task ON %1$s(task_id)",
-                tableName
-            )
+            StringUtils.format("ALTER TABLE %1$s ADD INDEX idx_%1$s_task (task_id)", tableName)
         )
     );
   }
@@ -413,7 +410,7 @@ public abstract class SQLMetadataConnector implements MetadataStorageConnector
                 + ")",
                 tableName, getPayloadType(), getCollation()
             ),
-            StringUtils.format("CREATE INDEX idx_%1$s_datasource ON %1$s(dataSource)", tableName)
+            StringUtils.format("ALTER TABLE %1$s ADD INDEX idx_%1$s_datasource (dataSource)", tableName)
         )
     );
   }
@@ -546,7 +543,7 @@ public abstract class SQLMetadataConnector implements MetadataStorageConnector
                 + ")",
                 tableName, getSerialType(), getPayloadType(), entryTypeName
             ),
-            StringUtils.format("CREATE INDEX idx_%1$s_%2$s_id ON %1$s(%2$s_id)", tableName, entryTypeName)
+            StringUtils.format("ALTER TABLE %1$s ADD INDEX idx_%1$s_%2$s_id (%2$s_id)", tableName, entryTypeName)
         )
     );
   }
@@ -566,7 +563,7 @@ public abstract class SQLMetadataConnector implements MetadataStorageConnector
                 + ")",
                 tableName, getSerialType(), getPayloadType()
             ),
-            StringUtils.format("CREATE INDEX idx_%1$s_spec_id ON %1$s(spec_id)", tableName)
+            StringUtils.format("ALTER TABLE %1$s ADD INDEX idx_%1$s_spec_id (spec_id)", tableName)
         )
     );
   }
@@ -970,9 +967,9 @@ public abstract class SQLMetadataConnector implements MetadataStorageConnector
                 + ")",
                 tableName, getSerialType(), getPayloadType()
             ),
-            StringUtils.format("CREATE INDEX idx_%1$s_key_time ON %1$s(audit_key, created_date)", tableName),
-            StringUtils.format("CREATE INDEX idx_%1$s_type_time ON %1$s(type, created_date)", tableName),
-            StringUtils.format("CREATE INDEX idx_%1$s_audit_time ON %1$s(created_date)", tableName)
+            StringUtils.format("ALTER TABLE %1$s ADD INDEX idx_%1$s_key_time (audit_key, created_date)", tableName),
+            StringUtils.format("ALTER TABLE %1$s ADD INDEX idx_%1$s_type_time (type, created_date)", tableName),
+            StringUtils.format("ALTER TABLE %1$s ADD INDEX idx_%1$s_audit_time (created_date)", tableName)
         )
     );
   }
@@ -1033,8 +1030,8 @@ public abstract class SQLMetadataConnector implements MetadataStorageConnector
                 + ")",
                 tableName, getSerialType(), getPayloadType()
             ),
-            StringUtils.format("CREATE INDEX idx_%1$s_fingerprint ON %1$s(fingerprint)", tableName),
-            StringUtils.format("CREATE INDEX idx_%1$s_used ON %1$s(used, used_status_last_updated)", tableName)
+            StringUtils.format("ALTER TABLE %1$s ADD INDEX idx_%1$s_fingerprint (fingerprint)", tableName),
+            StringUtils.format("ALTER TABLE %1$s ADD INDEX idx_%1$s_used (used, used_status_last_updated)", tableName)
         )
     );
   }
@@ -1123,7 +1120,7 @@ public abstract class SQLMetadataConnector implements MetadataStorageConnector
             {
               if (!createdIndexSet.contains(StringUtils.toUpperCase(indexName))) {
                 String indexSQL = StringUtils.format(
-                    "CREATE INDEX %1$s ON %2$s(%3$s)",
+                    "ALTER TABLE %2$s ADD INDEX %1$s (%3$s)",
                     indexName,
                     tableName,
                     Joiner.on(",").join(indexCols)
