@@ -92,7 +92,7 @@ public class KubernetesPeonClient
                            }
                            return pod.getStatus() != null && pod.getStatus().getPodIP() != null;
                          }, howLong, timeUnit);
-      
+
       if (result == null) {
         throw new IllegalStateException("K8s pod for the task [%s] appeared and disappeared. It can happen if the task was canceled");
       }
@@ -275,6 +275,17 @@ public class KubernetesPeonClient
     return pods.isEmpty() ? Optional.absent() : Optional.of(pods.get(0));
   }
 
+  private Optional<Job> getPeonJob(KubernetesClient client, String jobName)
+  {
+    Job job = client.batch()
+                    .v1()
+                    .jobs()
+                    .inNamespace(namespace)
+                    .withName(jobName)
+                    .get();
+    return Optional.fromNullable(job);
+  }
+
   public Pod getPeonPodWithRetries(String jobName)
   {
     return clientApi.executeRequest(client -> getPeonPodWithRetries(client, jobName, 5, RetryUtils.DEFAULT_MAX_TRIES));
@@ -290,10 +301,18 @@ public class KubernetesPeonClient
             if (maybePod.isPresent()) {
               return maybePod.get();
             }
-            throw new KubernetesResourceNotFoundException(
-                "K8s pod with label: job-name="
-                + jobName
-                + " not found");
+
+            Optional<Job> maybeJob = getPeonJob(client, jobName);
+            if (maybeJob.isPresent()) {
+              Job job = maybeJob.get();
+                throw new KubernetesResourceNotFoundException("K8s pod not found, but job "
+                                                              + jobName
+                                                              + " exists with status: "
+                                                              + job.getStatus().toString());
+            } else {
+              throw new KubernetesResourceNotFoundException("K8s pod not found, job " + jobName + " does not exist.");
+            }
+
           },
           DruidK8sConstants.IS_TRANSIENT, quietTries, maxTries
       );
