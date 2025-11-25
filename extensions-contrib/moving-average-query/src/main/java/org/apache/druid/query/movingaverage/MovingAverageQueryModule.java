@@ -49,7 +49,7 @@ public class MovingAverageQueryModule implements DruidModule
   @Override
   public void configure(Binder binder)
   {
-    MapBinder<Class<? extends Query>, QueryToolChest> toolChests = DruidBinders.queryToolChestBinder(binder);
+    MapBinder<Class<? extends Query<?>>, QueryToolChest<?, ? extends Query<?>>> toolChests = DruidBinders.queryToolChestBinder(binder);
 
     //Bind the query toolchest to the query class and add the binding to toolchest
     toolChests.addBinding(MovingAverageQuery.class).to(MovingAverageQueryToolChest.class);

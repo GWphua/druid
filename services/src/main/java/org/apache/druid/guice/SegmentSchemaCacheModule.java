@@ -65,12 +65,12 @@ public class SegmentSchemaCacheModule implements Module
     JsonConfigProvider.bind(binder, "druid.coordinator.query.retryPolicy", RetryQueryRunnerConfig.class);
     JsonConfigProvider.bind(binder, "druid.coordinator.internal.query.config", InternalQueryConfig.class);
 
-    MapBinder<Class<? extends Query>, QueryToolChest> toolChests = DruidBinders.queryToolChestBinder(binder);
+    MapBinder<Class<? extends Query<?>>, QueryToolChest<?, ? extends Query<?>>> toolChests = DruidBinders.queryToolChestBinder(binder);
     toolChests.addBinding(SegmentMetadataQuery.class).to(SegmentMetadataQueryQueryToolChest.class);
     binder.bind(SegmentMetadataQueryQueryToolChest.class).in(LazySingleton.class);
     binder.bind(QueryToolChestWarehouse.class).to(MapQueryToolChestWarehouse.class);
 
-    final MapBinder<Class<? extends Query>, QueryRunnerFactory> queryFactoryBinder =
+    final MapBinder<Class<? extends Query<?>>, QueryRunnerFactory<?, ? extends Query<?>>> queryFactoryBinder =
         DruidBinders.queryRunnerFactoryBinder(binder);
     queryFactoryBinder.addBinding(SegmentMetadataQuery.class).to(SegmentMetadataQueryRunnerFactory.class);
     DruidBinders.queryBinder(binder);

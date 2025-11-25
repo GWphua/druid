@@ -39,16 +39,7 @@ import java.util.Set;
 
 public class DruidBinders
 {
-  public static MapBinder<Class<? extends Query>, QueryRunnerFactory> queryRunnerFactoryBinder(Binder binder)
-  {
-    return MapBinder.newMapBinder(
-        binder,
-        new TypeLiteral<>() {},
-        TypeLiteral.get(QueryRunnerFactory.class)
-    );
-  }
-
-  public static MapBinder<Class<? extends Query>, QueryToolChest> queryToolChestBinder(Binder binder)
+  public static MapBinder<Class<? extends Query<?>>, QueryRunnerFactory<?, ? extends Query<?>>> queryRunnerFactoryBinder(Binder binder)
   {
     return MapBinder.newMapBinder(
         binder,
@@ -57,7 +48,16 @@ public class DruidBinders
     );
   }
 
-  public static MapBinder<Class<? extends Query>, QueryLogic> queryLogicBinderType(Binder binder)
+  public static MapBinder<Class<? extends Query<?>>, QueryToolChest<?, ? extends Query<?>>> queryToolChestBinder(Binder binder)
+  {
+    return MapBinder.newMapBinder(
+        binder,
+        new TypeLiteral<>() {},
+        new TypeLiteral<>() {}
+    );
+  }
+
+  public static MapBinder<Class<? extends Query<?>>, QueryLogic> queryLogicBinderType(Binder binder)
   {
     return MapBinder.newMapBinder(
         binder,
@@ -73,9 +73,9 @@ public class DruidBinders
 
   public static class QueryBinder
   {
-    MapBinderHelper<Class<? extends Query>, QueryLogic> queryLogicBinder;
-    MapBinderHelper<Class<? extends Query>, QueryRunnerFactory> queryRunnerFactoryBinder;
-    MapBinderHelper<Class<? extends Query>, QueryToolChest> queryToolChestBinder;
+    MapBinderHelper<Class<? extends Query<?>>, QueryLogic> queryLogicBinder;
+    MapBinderHelper<Class<? extends Query<?>>, QueryRunnerFactory<?, ? extends Query<?>>> queryRunnerFactoryBinder;
+    MapBinderHelper<Class<? extends Query<?>>, QueryToolChest<?, ? extends Query<?>>> queryToolChestBinder;
 
     public QueryBinder(Binder binder)
     {
@@ -97,7 +97,7 @@ public class DruidBinders
     }
 
     public QueryBinder bindQueryLogic(
-        Class<? extends Query> queryTypeClazz,
+        Class<? extends Query<?>> queryTypeClazz,
         Class<? extends QueryLogic> queryLogicClazz)
     {
       queryLogicBinder.bind(queryTypeClazz, queryLogicClazz);
@@ -105,29 +105,29 @@ public class DruidBinders
     }
 
     public QueryBinder bindQueryRunnerFactory(
-        Class<? extends Query> queryTypeClazz,
-        Class<? extends QueryRunnerFactory> queryRunnerFactory)
+        Class<? extends Query<?>> queryTypeClazz,
+        Class<? extends QueryRunnerFactory<?, ? extends Query<?>>> queryRunnerFactory)
     {
       queryRunnerFactoryBinder.bind(queryTypeClazz, queryRunnerFactory);
       return this;
     }
 
-    public QueryBinder naiveBinding2(Class<? extends Query> class1, Class<? extends QueryToolChest> class2)
+    public QueryBinder naiveBinding2(Class<? extends Query<?>> class1, Class<? extends QueryToolChest<?, ? extends Query<?>>> class2)
     {
       return bindQueryToolChest(class1, class2);
     }
 
     public QueryBinder bindQueryToolChest(
-        Class<? extends Query> queryTypeClazz,
-        Class<? extends QueryToolChest> queryToolChest)
+        Class<? extends Query<?>> queryTypeClazz,
+        Class<? extends QueryToolChest<?, ? extends Query<?>>> queryToolChest)
     {
       queryToolChestBinder.bind(queryTypeClazz, queryToolChest);
       return this;
     }
 
     public QueryBinder naiveBinding(
-        Class<? extends Query> queryTypeClazz,
-        Class<? extends QueryRunnerFactory> queryRunnerFactory)
+        Class<? extends Query<?>> queryTypeClazz,
+        Class<? extends QueryRunnerFactory<?, ? extends Query<?>>> queryRunnerFactory)
 
     {
       return bindQueryRunnerFactory(queryTypeClazz, queryRunnerFactory);

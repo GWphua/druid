@@ -81,14 +81,13 @@ public class QueryRunnerFactoryModule extends QueryToolChestModule
     binder.bind(QuerySchedulerProvider.class).in(LazySingleton.class);
     JsonConfigProvider.bind(binder, "druid.query.scheduler", QuerySchedulerProvider.class, Global.class);
 
-    final MapBinder<Class<? extends Query>, QueryRunnerFactory> queryFactoryBinder = DruidBinders.queryRunnerFactoryBinder(
-        binder
-    );
+    final MapBinder<Class<? extends Query<?>>, QueryRunnerFactory<?, ? extends Query<?>>> queryFactoryBinder =
+        DruidBinders.queryRunnerFactoryBinder(binder);
 
-    for (Map.Entry<Class<? extends Query<?>>, Class<? extends QueryRunnerFactory<?, ?>>> entry : MAPPINGS.entrySet()) {
-      queryFactoryBinder.addBinding(entry.getKey()).to(entry.getValue());
-      binder.bind(entry.getValue()).in(LazySingleton.class);
-    }
+    MAPPINGS.forEach((queryType, queryRunnerFactory) -> {
+      queryFactoryBinder.addBinding(queryType).to(queryRunnerFactory);
+      binder.bind(queryRunnerFactory).in(LazySingleton.class);
+    });
 
     DruidBinders.queryBinder(binder)
         .bindQueryLogic(UnionQuery.class, UnionQueryLogic.class);

@@ -73,8 +73,8 @@ public class QueryToolChestModule implements Module
   public static final String TOPN_QUERY_METRICS_FACTORY_PROPERTY = "druid.query.topN.queryMetricsFactory";
   public static final String SEARCH_QUERY_METRICS_FACTORY_PROPERTY = "druid.query.search.queryMetricsFactory";
 
-  public final Map<Class<? extends Query>, Class<? extends QueryToolChest>> mappings =
-      ImmutableMap.<Class<? extends Query>, Class<? extends QueryToolChest>>builder()
+  public final Map<Class<? extends Query<?>>, Class<? extends QueryToolChest<?, ? extends Query<?>>>> mappings =
+      ImmutableMap.<Class<? extends Query<?>>, Class<? extends QueryToolChest<?, ? extends Query<?>>>>builder()
                   .put(DataSourceMetadataQuery.class, DataSourceQueryQueryToolChest.class)
                   .put(GroupByQuery.class, GroupByQueryQueryToolChest.class)
                   .put(ScanQuery.class, ScanQueryQueryToolChest.class)
@@ -89,12 +89,12 @@ public class QueryToolChestModule implements Module
   @Override
   public void configure(Binder binder)
   {
-    MapBinder<Class<? extends Query>, QueryToolChest> toolChests = DruidBinders.queryToolChestBinder(binder);
+    MapBinder<Class<? extends Query<?>>, QueryToolChest<?, ? extends Query<?>>> toolChests = DruidBinders.queryToolChestBinder(binder);
 
-    for (Map.Entry<Class<? extends Query>, Class<? extends QueryToolChest>> entry : mappings.entrySet()) {
-      toolChests.addBinding(entry.getKey()).to(entry.getValue());
-      binder.bind(entry.getValue()).in(LazySingleton.class);
-    }
+    mappings.forEach((queryType, toolChest) -> {
+      toolChests.addBinding(queryType).to(toolChest);
+      binder.bind(toolChest).in(LazySingleton.class);
+    });
 
     binder.bind(QueryToolChestWarehouse.class).to(ConglomerateBackedToolChestWarehouse.class);
 
