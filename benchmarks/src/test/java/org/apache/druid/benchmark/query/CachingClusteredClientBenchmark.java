@@ -258,37 +258,38 @@ public class CachingClusteredClientBenchmark
       }
     };
 
-    conglomerate = DefaultQueryRunnerFactoryConglomerate.buildFromQueryRunnerFactories(ImmutableMap.<Class<? extends Query>, QueryRunnerFactory>builder()
-        .put(
-            TimeseriesQuery.class,
-            new TimeseriesQueryRunnerFactory(
-                new TimeseriesQueryQueryToolChest(),
-                new TimeseriesQueryEngine(),
-                QueryRunnerTestHelper.NOOP_QUERYWATCHER
-            )
-        )
-        .put(
-            TopNQuery.class,
-            new TopNQueryRunnerFactory(
-                new StupidPool<>(
-                    "TopNQueryRunnerFactory-bufferPool",
-                    () -> ByteBuffer.allocate(PROCESSING_BUFFER_SIZE)
-                ),
-                new TopNQueryQueryToolChest(new TopNQueryConfig()),
-                QueryRunnerTestHelper.NOOP_QUERYWATCHER
-            )
-        )
-        .put(
-            GroupByQuery.class,
-            makeGroupByQueryRunnerFactory(
-                GroupByQueryRunnerTest.DEFAULT_MAPPER,
-                new GroupByQueryConfig()
-                {
-                },
-                processingConfig
-            )
-        )
-        .build());
+    conglomerate = DefaultQueryRunnerFactoryConglomerate.buildFromQueryRunnerFactories(
+        ImmutableMap.<Class<? extends Query<?>>, QueryRunnerFactory<?, ? extends Query<?>>>builder()
+                    .put(
+                        TimeseriesQuery.class,
+                        new TimeseriesQueryRunnerFactory(
+                            new TimeseriesQueryQueryToolChest(),
+                            new TimeseriesQueryEngine(),
+                            QueryRunnerTestHelper.NOOP_QUERYWATCHER
+                        )
+                    )
+                    .put(
+                        TopNQuery.class,
+                        new TopNQueryRunnerFactory(
+                            new StupidPool<>(
+                                "TopNQueryRunnerFactory-bufferPool",
+                                () -> ByteBuffer.allocate(PROCESSING_BUFFER_SIZE)
+                            ),
+                            new TopNQueryQueryToolChest(new TopNQueryConfig()),
+                            QueryRunnerTestHelper.NOOP_QUERYWATCHER
+                        )
+                    )
+                    .put(
+                        GroupByQuery.class,
+                        makeGroupByQueryRunnerFactory(
+                            GroupByQueryRunnerTest.DEFAULT_MAPPER,
+                            new GroupByQueryConfig()
+                            {
+                            },
+                            processingConfig
+                        )
+                    )
+                    .build());
 
     SimpleServerView serverView = new SimpleServerView();
     int serverSuffx = 1;

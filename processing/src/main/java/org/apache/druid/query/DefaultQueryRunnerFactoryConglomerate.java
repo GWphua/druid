@@ -28,25 +28,25 @@ import java.util.Map;
 
 public class DefaultQueryRunnerFactoryConglomerate implements QueryRunnerFactoryConglomerate
 {
-  private final Map<Class<? extends Query>, QueryRunnerFactory> factories;
-  private final Map<Class<? extends Query>, QueryToolChest> toolchests;
-  private final Map<Class<? extends Query>, QueryLogic> querylogics;
+  private final Map<Class<? extends Query<?>>, QueryRunnerFactory<?, ? extends Query<?>>> factories;
+  private final Map<Class<? extends Query<?>>, QueryToolChest<?, ? extends Query<?>>> toolchests;
+  private final Map<Class<? extends Query<?>>, QueryLogic> querylogics;
 
   public static DefaultQueryRunnerFactoryConglomerate buildFromQueryRunnerFactories(
-      Map<Class<? extends Query>, QueryRunnerFactory> factories)
+      Map<Class<? extends Query<?>>, QueryRunnerFactory<?, ? extends Query<?>>> factories)
   {
     return new DefaultQueryRunnerFactoryConglomerate(
         factories,
-        Maps.transformValues(factories, f -> f.getToolchest()),
+        Maps.transformValues(factories, QueryRunnerFactory::getToolchest),
         Collections.emptyMap()
     );
   }
 
   @Inject
   public DefaultQueryRunnerFactoryConglomerate(
-      Map<Class<? extends Query>, QueryRunnerFactory> factories,
-      Map<Class<? extends Query>, QueryToolChest> toolchests,
-      Map<Class<? extends Query>, QueryLogic> querylogics)
+      Map<Class<? extends Query<?>>, QueryRunnerFactory<?, ? extends Query<?>>> factories,
+      Map<Class<? extends Query<?>>, QueryToolChest<?, ? extends Query<?>>> toolchests,
+      Map<Class<? extends Query<?>>, QueryLogic> querylogics)
   {
     this.factories = new IdentityHashMap<>(factories);
     this.toolchests = new IdentityHashMap<>(toolchests);
@@ -57,18 +57,17 @@ public class DefaultQueryRunnerFactoryConglomerate implements QueryRunnerFactory
   @SuppressWarnings("unchecked")
   public <T, QueryType extends Query<T>> QueryRunnerFactory<T, QueryType> findFactory(QueryType query)
   {
-    return factories.get(query.getClass());
+    return (QueryRunnerFactory<T, QueryType>) factories.get(query.getClass());
   }
 
   @Override
   @SuppressWarnings("unchecked")
   public <T, QueryType extends Query<T>> QueryToolChest<T, QueryType> getToolChest(QueryType query)
   {
-    return toolchests.get(query.getClass());
+    return (QueryToolChest<T, QueryType>) toolchests.get(query.getClass());
   }
 
   @Override
-  @SuppressWarnings("unchecked")
   public <T, QueryType extends Query<T>> QueryLogic getQueryLogic(QueryType query)
   {
     return querylogics.get(query.getClass());
