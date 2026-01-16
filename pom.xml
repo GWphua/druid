@@ -29,7 +29,7 @@
 
     <groupId>org.apache.druid</groupId>
     <artifactId>druid</artifactId>
-    <version>36.0.0-SNAPSHOT</version>
+    <version>37.0.0-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <name>Druid</name>
@@ -108,7 +108,7 @@
         <jersey.version>1.19.4</jersey.version>
         <jackson.version>2.19.2</jackson.version>
         <codehaus.jackson.version>1.9.13</codehaus.jackson.version>
-        <log4j.version>2.22.1</log4j.version>
+        <log4j.version>2.25.3</log4j.version>
         <mysql.version>8.2.0</mysql.version>
         <mariadb.version>2.7.3</mariadb.version>
         <netty3.version>3.10.6.Final</netty3.version>
@@ -430,7 +430,7 @@
             <dependency>
                 <groupId>org.bouncycastle</groupId>
                 <artifactId>bcpkix-jdk18on</artifactId>
-                <version>1.79</version>
+                <version>1.81</version>
             </dependency>
             <!-- Transitive dependency of hive-common in druid-kerberos, druid-ranger-security and
             druid-iceberg-extension  -->
@@ -603,12 +603,12 @@
             <dependency>
                 <groupId>org.mozilla</groupId>
                 <artifactId>rhino</artifactId>
-                <version>1.7.14</version>
+                <version>1.7.14.1</version>
             </dependency>
             <dependency>
                 <groupId>org.apache.commons</groupId>
                 <artifactId>commons-compress</artifactId>
-                <version>1.26.0</version>
+                <version>1.27.0</version>
             </dependency>
             <dependency>
                 <groupId>org.tukaani</groupId>
@@ -911,7 +911,7 @@
             <dependency>
                 <groupId>at.yawk.lz4</groupId>
                 <artifactId>lz4-java</artifactId>
-                <version>1.8.1</version>
+                <version>1.10.2</version>
             </dependency>
             <dependency>
                 <groupId>org.xerial.snappy</groupId>
@@ -1846,10 +1846,9 @@
             <plugin>
                 <groupId>org.owasp</groupId>
                 <artifactId>dependency-check-maven</artifactId>
-                <version>12.1.0</version>
+                <version>12.2.0</version>
                 <configuration>
                     <nvdApiKey>${nvdApiKey}</nvdApiKey>
-                    <ossIndexServerId>ossindex-credentials</ossIndexServerId>
                     <failBuildOnCVSS>7</failBuildOnCVSS>
                     <skipProvidedScope>true</skipProvidedScope>
                     <skipSystemScope>true</skipSystemScope>  <!-- avoid error when processing jdk.tools:jdk.tools:jar:1.8:system -->
