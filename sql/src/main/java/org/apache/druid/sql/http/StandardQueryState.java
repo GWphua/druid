@@ -17,22 +17,21 @@
  * under the License.
  */
 
-package org.apache.druid.discovery;
+package org.apache.druid.sql.http;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import org.apache.druid.guice.ServerModule;
-import org.apache.druid.jackson.DefaultObjectMapper;
-
-public final class DruidServiceTestUtils
+/**
+ * Standard strings returned by {@link QueryInfo#state()}. Engines can add their own if they like.
+ */
+public class StandardQueryState
 {
-  public static ObjectMapper newJsonMapper()
-  {
-    final ObjectMapper mapper = new DefaultObjectMapper();
-    mapper.registerModules(new ServerModule().getJacksonModules());
-    return mapper;
-  }
+  public static final String ACCEPTED = "ACCEPTED";
+  public static final String RUNNING = "RUNNING";
+  public static final String SUCCESS = "SUCCESS";
+  public static final String FAILED = "FAILED";
+  public static final String CANCELED = "CANCELED";
 
-  private DruidServiceTestUtils()
+  private StandardQueryState()
   {
+    // No instantiation.
   }
 }

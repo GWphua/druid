@@ -17,16 +17,27 @@
  * under the License.
  */
 
-package org.apache.druid.jackson;
+package org.apache.druid.indexing.overlord.config;
 
-import nl.jqno.equalsverifier.EqualsVerifier;
-import org.junit.Test;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import org.apache.druid.common.config.Configs;
 
-public class StringObjectPairListTest
+public class OverlordKillConfigs
 {
-  @Test
-  public void testEquals()
+  public static OverlordKillConfigs DEFAULT = new OverlordKillConfigs(null);
+
+  @JsonProperty("indexingStates")
+  private final IndexingStateCleanupConfig indexingStates;
+
+  public OverlordKillConfigs(
+      @JsonProperty("indexingStates") IndexingStateCleanupConfig indexingStates
+  )
   {
-    EqualsVerifier.forClass(StringObjectPairList.class).usingGetClass().withNonnullFields("pairs").verify();
+    this.indexingStates = Configs.valueOrDefault(indexingStates, IndexingStateCleanupConfig.DEFAULT);
+  }
+
+  public IndexingStateCleanupConfig indexingStates()
+  {
+    return indexingStates;
   }
 }
