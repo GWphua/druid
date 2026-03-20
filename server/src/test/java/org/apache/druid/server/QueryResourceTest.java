@@ -52,10 +52,13 @@ import org.apache.druid.java.util.common.guava.Yielders;
 import org.apache.druid.java.util.common.guava.YieldingAccumulator;
 import org.apache.druid.java.util.emitter.EmittingLogger;
 import org.apache.druid.java.util.emitter.service.ServiceEmitter;
+import org.apache.druid.java.util.emitter.service.ServiceMetricEvent;
+import org.apache.druid.java.util.metrics.StubServiceEmitter;
 import org.apache.druid.query.BadJsonQueryException;
 import org.apache.druid.query.DefaultGenericQueryMetricsFactory;
 import org.apache.druid.query.DefaultQueryConfig;
 import org.apache.druid.query.DefaultQueryRunnerFactoryConglomerate;
+import org.apache.druid.query.DruidMetrics;
 import org.apache.druid.query.Query;
 import org.apache.druid.query.QueryCapacityExceededException;
 import org.apache.druid.query.QueryException;
@@ -126,6 +129,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
 
 public class QueryResourceTest
 {
@@ -233,6 +237,7 @@ public class QueryResourceTest
   private QueryResource queryResource;
   private QueryScheduler queryScheduler;
   private TestRequestLogger testRequestLogger;
+  private StubServiceEmitter emitter;
 
   @BeforeClass
   public static void staticSetup()
@@ -253,6 +258,7 @@ public class QueryResourceTest
 
     queryScheduler = QueryStackTests.DEFAULT_NOOP_SCHEDULER;
     testRequestLogger = new TestRequestLogger();
+    emitter = StubServiceEmitter.createStarted();
     queryResource = createQueryResource(ResponseContextConfig.newConfig(true));
   }
 
@@ -263,12 +269,13 @@ public class QueryResourceTest
             CONGLOMERATE,
             TEST_SEGMENT_WALKER,
             new DefaultGenericQueryMetricsFactory(),
-            new NoopServiceEmitter(),
+            emitter,
             testRequestLogger,
             new AuthConfig(),
             NoopPolicyEnforcer.instance(),
             AuthTestUtils.TEST_AUTHORIZER_MAPPER,
-            Suppliers.ofInstance(new DefaultQueryConfig(ImmutableMap.of()))
+            Suppliers.ofInstance(new DefaultQueryConfig(Map.of())),
+            null
         ),
         jsonMapper,
         queryScheduler,
@@ -312,12 +319,13 @@ public class QueryResourceTest
             CONGLOMERATE,
             TEST_SEGMENT_WALKER,
             new DefaultGenericQueryMetricsFactory(),
-            new NoopServiceEmitter(),
+            emitter,
             testRequestLogger,
             new AuthConfig(),
             NoopPolicyEnforcer.instance(),
             AuthTestUtils.TEST_AUTHORIZER_MAPPER,
-            Suppliers.ofInstance(overrideConfig)
+            Suppliers.ofInstance(overrideConfig),
+            null
         ),
         jsonMapper,
         queryScheduler,
@@ -392,12 +400,13 @@ public class QueryResourceTest
               }
             },
             new DefaultGenericQueryMetricsFactory(),
-            new NoopServiceEmitter(),
+            emitter,
             testRequestLogger,
             new AuthConfig(),
             NoopPolicyEnforcer.instance(),
             AuthTestUtils.TEST_AUTHORIZER_MAPPER,
-            Suppliers.ofInstance(overrideConfig)
+            Suppliers.ofInstance(overrideConfig),
+            null
         ),
         jsonMapper,
         queryScheduler,
@@ -417,6 +426,8 @@ public class QueryResourceTest
 
     final Response response = expectSynchronousRequestFlow(SIMPLE_TIMESERIES_QUERY);
     Assert.assertEquals(Status.INTERNAL_SERVER_ERROR.getStatusCode(), response.getStatus());
+    emitter.verifyEmitted("query/time", 1);
+    Assert.assertEquals(500, emitter.getMetricEvents("query/time").get(0).toMap().get(DruidMetrics.STATUS_CODE));
 
     final ErrorResponse entity = (ErrorResponse) response.getEntity();
     MatcherAssert.assertThat(
@@ -490,12 +501,13 @@ public class QueryResourceTest
               }
             },
             new DefaultGenericQueryMetricsFactory(),
-            new NoopServiceEmitter(),
+            emitter,
             testRequestLogger,
             new AuthConfig(),
             NoopPolicyEnforcer.instance(),
             AuthTestUtils.TEST_AUTHORIZER_MAPPER,
-            Suppliers.ofInstance(new DefaultQueryConfig(ImmutableMap.of()))
+            Suppliers.ofInstance(new DefaultQueryConfig(Map.of())),
+            null
         ),
         jsonMapper,
         queryScheduler,
@@ -524,6 +536,9 @@ public class QueryResourceTest
 
     Assert.assertTrue(fields.containsKey(QueryResource.RESPONSE_COMPLETE_TRAILER_HEADER));
     Assert.assertEquals(fields.get(QueryResource.RESPONSE_COMPLETE_TRAILER_HEADER), "false");
+
+    emitter.verifyEmitted("query/time", 1);
+    Assert.assertEquals(504, emitter.getMetricEvents("query/time").get(0).toMap().get(DruidMetrics.STATUS_CODE));
   }
 
   @Test
@@ -572,12 +587,13 @@ public class QueryResourceTest
               }
             },
             new DefaultGenericQueryMetricsFactory(),
-            new NoopServiceEmitter(),
+            emitter,
             testRequestLogger,
             new AuthConfig(),
             NoopPolicyEnforcer.instance(),
             AuthTestUtils.TEST_AUTHORIZER_MAPPER,
-            Suppliers.ofInstance(new DefaultQueryConfig(ImmutableMap.of()))
+            Suppliers.ofInstance(new DefaultQueryConfig(Map.of())),
+            null
         ),
         jsonMapper,
         queryScheduler,
@@ -604,6 +620,8 @@ public class QueryResourceTest
         + "\"errorMessage\":\"mid-flight exception\",\"context\":{}}]",
         actualOutput
     );
+    emitter.verifyEmitted("query/time", 1);
+    Assert.assertEquals(400, emitter.getMetricEvents("query/time").get(0).toMap().get(DruidMetrics.STATUS_CODE));
   }
 
   @Test
@@ -668,12 +686,13 @@ public class QueryResourceTest
               }
             },
             new DefaultGenericQueryMetricsFactory(),
-            new NoopServiceEmitter(),
+            emitter,
             testRequestLogger,
             new AuthConfig(),
             NoopPolicyEnforcer.instance(),
             AuthTestUtils.TEST_AUTHORIZER_MAPPER,
-            Suppliers.ofInstance(new DefaultQueryConfig(ImmutableMap.of()))
+            Suppliers.ofInstance(new DefaultQueryConfig(Map.of())),
+            null
         ),
         jsonMapper,
         queryScheduler,
@@ -705,6 +724,9 @@ public class QueryResourceTest
 
     Assert.assertTrue(fields.containsKey(QueryResource.RESPONSE_COMPLETE_TRAILER_HEADER));
     Assert.assertEquals("true", fields.get(QueryResource.RESPONSE_COMPLETE_TRAILER_HEADER));
+
+    emitter.verifyEmitted("query/time", 1);
+    Assert.assertEquals(200, emitter.getMetricEvents("query/time").get(0).toMap().get(DruidMetrics.STATUS_CODE));
   }
 
 
@@ -739,7 +761,7 @@ public class QueryResourceTest
 
     queryResource = new QueryResource(
 
-        new QueryLifecycleFactory(null, null, null, null, null, null, NoopPolicyEnforcer.instance(), null, Suppliers.ofInstance(overrideConfig))
+        new QueryLifecycleFactory(null, null, null, null, null, null, NoopPolicyEnforcer.instance(), null, Suppliers.ofInstance(overrideConfig), null)
         {
           @Override
           public QueryLifecycle factorize()
@@ -748,12 +770,13 @@ public class QueryResourceTest
                 CONGLOMERATE,
                 querySegmentWalker,
                 new DefaultGenericQueryMetricsFactory(),
-                new NoopServiceEmitter(),
+                emitter,
                 testRequestLogger,
                 AuthTestUtils.TEST_AUTHORIZER_MAPPER,
                 overrideConfig,
                 new AuthConfig(),
                 NoopPolicyEnforcer.instance(),
+                null,
                 System.currentTimeMillis(),
                 System.nanoTime()
             )
@@ -761,6 +784,7 @@ public class QueryResourceTest
               @Override
               public void emitLogsAndMetrics(@Nullable Throwable e, @Nullable String remoteAddress, long bytesWritten)
               {
+                super.emitLogsAndMetrics(e, remoteAddress, bytesWritten);
                 Assert.assertTrue(Throwables.getStackTraceAsString(e).contains(embeddedExceptionMessage));
               }
             };
@@ -794,6 +818,8 @@ public class QueryResourceTest
         )
             .expectMessageIs("something")
     );
+    emitter.verifyEmitted("query/time", 1);
+    Assert.assertEquals(500, emitter.getMetricEvents("query/time").get(0).toMap().get(DruidMetrics.STATUS_CODE));
   }
 
   @Test
@@ -807,12 +833,13 @@ public class QueryResourceTest
             CONGLOMERATE,
             TEST_SEGMENT_WALKER,
             new DefaultGenericQueryMetricsFactory(),
-            new NoopServiceEmitter(),
+            emitter,
             testRequestLogger,
             new AuthConfig(),
             NoopPolicyEnforcer.instance(),
             AuthTestUtils.TEST_AUTHORIZER_MAPPER,
-            Suppliers.ofInstance(overrideConfig)
+            Suppliers.ofInstance(overrideConfig),
+            null
         ),
         jsonMapper,
         queryScheduler,
@@ -854,6 +881,8 @@ public class QueryResourceTest
         -1,
         testRequestLogger.getNativeQuerylogs().get(0).getQuery().getContext().get(overrideConfigKey)
     );
+    emitter.verifyEmitted("query/time", 1);
+    Assert.assertEquals(200, emitter.getMetricEvents("query/time").get(0).toMap().get(DruidMetrics.STATUS_CODE));
   }
 
   @Test
@@ -878,6 +907,8 @@ public class QueryResourceTest
         expectedException,
         jsonMapper.readValue(response.baos.toByteArray(), QueryInterruptedException.class).toString()
     );
+    emitter.verifyEmitted("query/time", 1);
+    Assert.assertEquals(500, emitter.getMetricEvents("query/time").get(0).toMap().get(DruidMetrics.STATUS_CODE));
   }
 
   @Test
@@ -892,6 +923,10 @@ public class QueryResourceTest
         queryResource
     );
     Assert.assertEquals(HttpStatus.SC_OK, response.getStatus());
+
+    emitter.verifyEmitted("query/time", 1);
+    Assert.assertEquals(1, queryResource.getSuccessfulQueryCount());
+    Assert.assertEquals(200, emitter.getMetricEvents("query/time").get(0).toMap().get(DruidMetrics.STATUS_CODE));
   }
 
   @Test
@@ -904,6 +939,10 @@ public class QueryResourceTest
     Assert.assertEquals(HttpStatus.SC_OK, response.getStatus());
     //since accept header is null, the response content type should be same as the value of 'Content-Type' header
     Assert.assertEquals(MediaType.APPLICATION_JSON, response.getContentType());
+
+    emitter.verifyEmitted("query/time", 1);
+    Assert.assertEquals(1, queryResource.getSuccessfulQueryCount());
+    Assert.assertEquals(200, emitter.getMetricEvents("query/time").get(0).toMap().get(DruidMetrics.STATUS_CODE));
   }
 
   @Test
@@ -917,6 +956,10 @@ public class QueryResourceTest
     Assert.assertEquals(HttpStatus.SC_OK, response.getStatus());
     //since accept header is empty, the response content type should be same as the value of 'Content-Type' header
     Assert.assertEquals(MediaType.APPLICATION_JSON, response.getContentType());
+
+    emitter.verifyEmitted("query/time", 1);
+    Assert.assertEquals(1, queryResource.getSuccessfulQueryCount());
+    Assert.assertEquals(200, emitter.getMetricEvents("query/time").get(0).toMap().get(DruidMetrics.STATUS_CODE));
   }
 
   @Test
@@ -932,6 +975,10 @@ public class QueryResourceTest
 
     // Content-Type in response should be Smile
     Assert.assertEquals(SmileMediaTypes.APPLICATION_JACKSON_SMILE, response.getContentType());
+
+    emitter.verifyEmitted("query/time", 1);
+    Assert.assertEquals(1, queryResource.getSuccessfulQueryCount());
+    Assert.assertEquals(200, emitter.getMetricEvents("query/time").get(0).toMap().get(DruidMetrics.STATUS_CODE));
   }
 
   @Test
@@ -952,6 +999,10 @@ public class QueryResourceTest
 
     // Content-Type in response should be Smile
     Assert.assertEquals(SmileMediaTypes.APPLICATION_JACKSON_SMILE, response.getContentType());
+
+    emitter.verifyEmitted("query/time", 1);
+    Assert.assertEquals(1, queryResource.getSuccessfulQueryCount());
+    Assert.assertEquals(200, emitter.getMetricEvents("query/time").get(0).toMap().get(DruidMetrics.STATUS_CODE));
   }
 
   @Test
@@ -971,6 +1022,10 @@ public class QueryResourceTest
 
     // Content-Type in response should default to Content-Type from request
     Assert.assertEquals(SmileMediaTypes.APPLICATION_JACKSON_SMILE, response.getContentType());
+
+    emitter.verifyEmitted("query/time", 1);
+    Assert.assertEquals(1, queryResource.getSuccessfulQueryCount());
+    Assert.assertEquals(200, emitter.getMetricEvents("query/time").get(0).toMap().get(DruidMetrics.STATUS_CODE));
   }
 
   @Test
@@ -1055,7 +1110,8 @@ public class QueryResourceTest
             new AuthConfig(),
             NoopPolicyEnforcer.instance(),
             authMapper,
-            Suppliers.ofInstance(new DefaultQueryConfig(ImmutableMap.of()))
+            Suppliers.ofInstance(new DefaultQueryConfig(Map.of())),
+            null
         ),
         jsonMapper,
         queryScheduler,
@@ -1131,12 +1187,13 @@ public class QueryResourceTest
             CONGLOMERATE,
             timeoutSegmentWalker,
             new DefaultGenericQueryMetricsFactory(),
-            new NoopServiceEmitter(),
+            emitter,
             testRequestLogger,
             new AuthConfig(),
             NoopPolicyEnforcer.instance(),
             AuthTestUtils.TEST_AUTHORIZER_MAPPER,
-            Suppliers.ofInstance(new DefaultQueryConfig(ImmutableMap.of()))
+            Suppliers.ofInstance(new DefaultQueryConfig(Map.of())),
+            null
         ),
         jsonMapper,
         queryScheduler,
@@ -1180,6 +1237,8 @@ public class QueryResourceTest
     Assert.assertEquals(QueryException.QUERY_TIMEOUT_ERROR_CODE, ex.getErrorCode());
     Assert.assertEquals(1, timeoutQueryResource.getTimedOutQueryCount());
 
+    emitter.verifyEmitted("query/time", 1);
+    Assert.assertEquals(504, emitter.getMetricEvents("query/time").get(0).toMap().get(DruidMetrics.STATUS_CODE));
   }
 
   @Test(timeout = 60_000L)
@@ -1238,7 +1297,8 @@ public class QueryResourceTest
             new AuthConfig(),
             NoopPolicyEnforcer.instance(),
             authMapper,
-            Suppliers.ofInstance(new DefaultQueryConfig(ImmutableMap.of()))
+            Suppliers.ofInstance(new DefaultQueryConfig(Map.of())),
+            null
         ),
         jsonMapper,
         queryScheduler,
@@ -1351,7 +1411,8 @@ public class QueryResourceTest
             new AuthConfig(),
             NoopPolicyEnforcer.instance(),
             authMapper,
-            Suppliers.ofInstance(new DefaultQueryConfig(ImmutableMap.of()))
+            Suppliers.ofInstance(new DefaultQueryConfig(Map.of())),
+            null
         ),
         jsonMapper,
         queryScheduler,
@@ -1480,6 +1541,16 @@ public class QueryResourceTest
     }
     Assert.assertEquals(2, queryResource.getSuccessfulQueryCount());
     Assert.assertEquals(1, queryResource.getFailedQueryCount());
+
+    emitter.verifyEmitted("query/time", 3);
+    Map<Integer, Long> codeFrequencies = emitter.getMetricEvents("query/time").stream()
+                                                .map(ServiceMetricEvent::toMap)
+                                                .map(map -> (int) map.get(DruidMetrics.STATUS_CODE))
+                                                .collect(Collectors.groupingBy(
+                                                    code -> code,
+                                                    Collectors.counting()
+                                                ));
+    Assert.assertEquals(Map.of(200, 2L, 429, 1L), codeFrequencies);
   }
 
   @Test(timeout = 10_000L)
@@ -1550,6 +1621,16 @@ public class QueryResourceTest
     for (Future<Boolean> theFuture : back2) {
       Assert.assertTrue(theFuture.get());
     }
+
+    emitter.verifyEmitted("query/time", 3);
+    Map<Integer, Long> codeFrequencies = emitter.getMetricEvents("query/time").stream()
+                                                .map(ServiceMetricEvent::toMap)
+                                                .map(map -> (int) map.get(DruidMetrics.STATUS_CODE))
+                                                .collect(Collectors.groupingBy(
+                                                    code -> code,
+                                                    Collectors.counting()
+                                                ));
+    Assert.assertEquals(Map.of(200, 2L, 429, 1L), codeFrequencies);
   }
 
   @Test(timeout = 10_000L)
@@ -1618,6 +1699,15 @@ public class QueryResourceTest
     for (Future<Boolean> theFuture : back2) {
       Assert.assertTrue(theFuture.get());
     }
+    emitter.verifyEmitted("query/time", 3);
+    Map<Integer, Long> codeFrequencies = emitter.getMetricEvents("query/time").stream()
+                                                .map(ServiceMetricEvent::toMap)
+                                                .map(map -> (int) map.get(DruidMetrics.STATUS_CODE))
+                                                .collect(Collectors.groupingBy(
+                                                    code -> code,
+                                                    Collectors.counting()
+                                                ));
+    Assert.assertEquals(Map.of(200, 2L, 429, 1L), codeFrequencies);
   }
 
   @Test
@@ -1706,12 +1796,13 @@ public class QueryResourceTest
             CONGLOMERATE,
             texasRanger,
             new DefaultGenericQueryMetricsFactory(),
-            new NoopServiceEmitter(),
+            emitter,
             testRequestLogger,
             new AuthConfig(),
             NoopPolicyEnforcer.instance(),
             AuthTestUtils.TEST_AUTHORIZER_MAPPER,
-            Suppliers.ofInstance(new DefaultQueryConfig(ImmutableMap.of()))
+            Suppliers.ofInstance(new DefaultQueryConfig(Map.of())),
+            null
         ),
         jsonMapper,
         scheduler,

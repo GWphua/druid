@@ -24,6 +24,7 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import org.apache.druid.java.util.common.ISE;
 import org.apache.druid.segment.IndexSpec;
+import org.apache.druid.segment.column.BitmapIndexType;
 import org.apache.druid.segment.column.StringEncodingStrategy;
 import org.apache.druid.segment.data.BitmapSerdeFactory;
 import org.apache.druid.segment.data.CompressionFactory;
@@ -34,17 +35,17 @@ import java.util.Objects;
 
 /**
  * Defines storage format for 'auto' and json columns. This can be convered into the 'effective' format spec by calling
- * {@link #getEffectiveSpec(IndexSpec)}, which will fill in any values which were not specified from
- * {@link IndexSpec#getAutoColumnFormatSpec()}, falling back to hard-coded defaults, useful when generating segments or
+ * {@link #getEffectiveFormatSpec(NestedCommonFormatColumnFormatSpec, IndexSpec)}, useful when generating segments or
  * comparing compaction state.
  */
 public class NestedCommonFormatColumnFormatSpec
 {
   private static final NestedCommonFormatColumnFormatSpec DEFAULT =
-      NestedCommonFormatColumnFormatSpec.builder()
-                                        .setObjectFieldsDictionaryEncoding(StringEncodingStrategy.UTF8_STRATEGY)
-                                        .setObjectStorageEncoding(ObjectStorageEncoding.SMILE)
-                                        .build();
+      builder().setObjectFieldsDictionaryEncoding(StringEncodingStrategy.UTF8_STRATEGY)
+               .setObjectStorageEncoding(ObjectStorageEncoding.SMILE)
+               .setLongFieldBitmapIndexType(BitmapIndexType.DictionaryEncodedValueIndex.INSTANCE)
+               .setDoubleFieldBitmapIndexType(BitmapIndexType.DictionaryEncodedValueIndex.INSTANCE)
+               .build();
 
   public static Builder builder()
   {
@@ -56,12 +57,122 @@ public class NestedCommonFormatColumnFormatSpec
     return new Builder(spec);
   }
 
+  /**
+   * Create a {@link NestedCommonFormatColumnFormatSpec} with all fields fully populated. Values are populated in the following order:
+   * <ul>
+   *   <li> value in the given column format spec, if non-null </li>
+   *   <li> value in {@link IndexSpec#getAutoColumnFormatSpec()}, if non-null </li>
+   *   <li> fall back to equivalent fields on {@link IndexSpec} itself if applicable </li>
+   *   <li> hard coded defaults in {@link #DEFAULT}</li>
+   * </ul>
+   */
   public static NestedCommonFormatColumnFormatSpec getEffectiveFormatSpec(
       @Nullable NestedCommonFormatColumnFormatSpec columnFormatSpec,
       IndexSpec indexSpec
   )
   {
-    return Objects.requireNonNullElse(columnFormatSpec, DEFAULT).getEffectiveSpec(indexSpec);
+    final Builder builder = columnFormatSpec == null ? builder() : builder(columnFormatSpec);
+
+    // this is a defensive check, the json spec of the column can't set this, only the builder can
+    if (builder.bitmapEncoding != null && !builder.bitmapEncoding.equals(indexSpec.getBitmapSerdeFactory())) {
+      throw new ISE(
+          "bitmapEncoding[%s] does not match indexSpec.bitmap[%s]",
+          builder.bitmapEncoding,
+          indexSpec.getBitmapSerdeFactory()
+      );
+    }
+    builder.setBitmapEncoding(indexSpec.getBitmapSerdeFactory());
+
+    final NestedCommonFormatColumnFormatSpec defaultSpec;
+    if (indexSpec.getAutoColumnFormatSpec() != null) {
+      defaultSpec = indexSpec.getAutoColumnFormatSpec();
+    } else {
+      defaultSpec = DEFAULT;
+    }
+
+    if (builder.longFieldBitmapIndexType == null) {
+      if (defaultSpec.getLongFieldBitmapIndexType() != null) {
+        builder.setLongFieldBitmapIndexType(defaultSpec.getLongFieldBitmapIndexType());
+      } else {
+        builder.setLongFieldBitmapIndexType(DEFAULT.getLongFieldBitmapIndexType());
+      }
+    }
+
+    if (builder.doubleFieldBitmapIndexType == null) {
+      if (defaultSpec.getDoubleFieldBitmapIndexType() != null) {
+        builder.setDoubleFieldBitmapIndexType(defaultSpec.getDoubleFieldBitmapIndexType());
+      } else {
+        builder.setDoubleFieldBitmapIndexType(DEFAULT.getDoubleFieldBitmapIndexType());
+      }
+    }
+
+    if (builder.objectFieldsDictionaryEncoding == null) {
+      if (defaultSpec.getObjectFieldsDictionaryEncoding() != null) {
+        builder.setObjectFieldsDictionaryEncoding(defaultSpec.getObjectFieldsDictionaryEncoding());
+      } else {
+        builder.setObjectFieldsDictionaryEncoding(StringEncodingStrategy.DEFAULT);
+      }
+    }
+
+    if (builder.objectStorageEncoding == null) {
+      if (defaultSpec.getObjectStorageEncoding() != null) {
+        builder.setObjectStorageEncoding(defaultSpec.getObjectStorageEncoding());
+      } else {
+        builder.setObjectStorageEncoding(ObjectStorageEncoding.SMILE);
+      }
+    }
+
+    if (builder.objectStorageCompression == null) {
+      if (defaultSpec.getObjectStorageCompression() != null) {
+        builder.setObjectStorageCompression(defaultSpec.getObjectStorageCompression());
+      } else if (indexSpec.getJsonCompression() != null) {
+        builder.setObjectStorageCompression(indexSpec.getJsonCompression());
+      } else {
+        builder.setObjectStorageCompression(CompressionStrategy.LZ4);
+      }
+    }
+
+    if (builder.stringDictionaryEncoding == null) {
+      if (defaultSpec.getStringDictionaryEncoding() != null) {
+        builder.setStringDictionaryEncoding(defaultSpec.getStringDictionaryEncoding());
+      } else {
+        builder.setStringDictionaryEncoding(indexSpec.getStringDictionaryEncoding());
+      }
+    }
+
+    if (builder.dictionaryEncodedColumnCompression == null) {
+      if (defaultSpec.getDictionaryEncodedColumnCompression() != null) {
+        builder.setDictionaryEncodedColumnCompression(defaultSpec.getDictionaryEncodedColumnCompression());
+      } else {
+        builder.setDictionaryEncodedColumnCompression(indexSpec.getDimensionCompression());
+      }
+    }
+
+    if (builder.longColumnEncoding == null) {
+      if (defaultSpec.getLongColumnEncoding() != null) {
+        builder.setLongColumnEncoding(defaultSpec.getLongColumnEncoding());
+      } else {
+        builder.setLongColumnEncoding(indexSpec.getLongEncoding());
+      }
+    }
+
+    if (builder.longColumnCompression == null) {
+      if (defaultSpec.getLongColumnCompression() != null) {
+        builder.setLongColumnCompression(defaultSpec.getLongColumnCompression());
+      } else {
+        builder.setLongColumnCompression(indexSpec.getMetricCompression());
+      }
+    }
+
+    if (builder.doubleColumnCompression == null) {
+      if (defaultSpec.getDoubleColumnCompression() != null) {
+        builder.setDoubleColumnCompression(defaultSpec.getDoubleColumnCompression());
+      } else {
+        builder.setDoubleColumnCompression(indexSpec.getMetricCompression());
+      }
+    }
+
+    return builder.build();
   }
 
   @Nullable
@@ -82,14 +193,21 @@ public class NestedCommonFormatColumnFormatSpec
   private final CompressionStrategy doubleColumnCompression;
   @Nullable
   private final BitmapSerdeFactory bitmapEncoding;
+  @Nullable
+  private final BitmapIndexType longFieldBitmapIndexType;
+  @Nullable
+  private final BitmapIndexType doubleFieldBitmapIndexType;
 
   @JsonCreator
   public NestedCommonFormatColumnFormatSpec(
       @JsonProperty("objectFieldsDictionaryEncoding") @Nullable StringEncodingStrategy objectFieldsDictionaryEncoding,
+      @JsonProperty("longFieldBitmapIndexType") @Nullable BitmapIndexType longFieldBitmapIndexType,
+      @JsonProperty("doubleFieldBitmapIndexType") @Nullable BitmapIndexType doubleFieldBitmapIndexType,
       @JsonProperty("objectStorageEncoding") @Nullable ObjectStorageEncoding objectStorageEncoding,
       @JsonProperty("objectStorageCompression") @Nullable CompressionStrategy objectStorageCompression,
       @JsonProperty("stringDictionaryEncoding") @Nullable StringEncodingStrategy stringDictionaryEncoding,
-      @JsonProperty("dictionaryEncodedColumnCompression") @Nullable CompressionStrategy dictionaryEncodedColumnCompression,
+      @JsonProperty("dictionaryEncodedColumnCompression") @Nullable
+      CompressionStrategy dictionaryEncodedColumnCompression,
       @JsonProperty("longColumnEncoding") @Nullable CompressionFactory.LongEncodingStrategy longColumnEncoding,
       @JsonProperty("longColumnCompression") @Nullable CompressionStrategy longColumnCompression,
       @JsonProperty("doubleColumnCompression") @Nullable CompressionStrategy doubleColumnCompression
@@ -104,14 +222,16 @@ public class NestedCommonFormatColumnFormatSpec
         longColumnEncoding,
         longColumnCompression,
         doubleColumnCompression,
-        null
+        null,
+        longFieldBitmapIndexType,
+        doubleFieldBitmapIndexType
     );
   }
 
   /**
    * Internal constructor used by {@link Builder} to set {@link #bitmapEncoding} during the process of resolving values
-   * for {@link #getEffectiveSpec(IndexSpec)}. {@link #bitmapEncoding} cannot vary per column, and is always set from
-   * {@link IndexSpec#getBitmapSerdeFactory()}.
+   * for {@link #getEffectiveFormatSpec(NestedCommonFormatColumnFormatSpec, IndexSpec)}. {@link #bitmapEncoding} cannot
+   * vary per column, and is always set from {@link IndexSpec#getBitmapSerdeFactory()}.
    */
   protected NestedCommonFormatColumnFormatSpec(
       @Nullable StringEncodingStrategy objectFieldsDictionaryEncoding,
@@ -122,7 +242,9 @@ public class NestedCommonFormatColumnFormatSpec
       @Nullable CompressionFactory.LongEncodingStrategy longColumnEncoding,
       @Nullable CompressionStrategy longColumnCompression,
       @Nullable CompressionStrategy doubleColumnCompression,
-      @Nullable BitmapSerdeFactory bitmapEncoding
+      @Nullable BitmapSerdeFactory bitmapEncoding,
+      @Nullable BitmapIndexType longFieldBitmapIndexType,
+      @Nullable BitmapIndexType doubleFieldBitmapIndexType
   )
   {
     this.objectFieldsDictionaryEncoding = objectFieldsDictionaryEncoding;
@@ -134,100 +256,8 @@ public class NestedCommonFormatColumnFormatSpec
     this.longColumnCompression = longColumnCompression;
     this.doubleColumnCompression = doubleColumnCompression;
     this.bitmapEncoding = bitmapEncoding;
-  }
-
-  /**
-   * Fully populate all fields of {@link NestedCommonFormatColumnFormatSpec}. Null values are populated first checking
-   * {@link IndexSpec#getAutoColumnFormatSpec()}, then falling back to fields on {@link IndexSpec} itself if applicable,
-   * and finally resorting to hard coded defaults.
-   */
-  public NestedCommonFormatColumnFormatSpec getEffectiveSpec(IndexSpec indexSpec)
-  {
-    // this is a defensive check, the json spec can't set this, only the builder can
-    if (bitmapEncoding != null && !bitmapEncoding.equals(indexSpec.getBitmapSerdeFactory())) {
-      throw new ISE(
-          "bitmapEncoding[%s] does not match indexSpec.bitmap[%s]",
-          bitmapEncoding,
-          indexSpec.getBitmapSerdeFactory()
-      );
-    }
-    Builder builder = new Builder(this);
-    builder.setBitmapEncoding(indexSpec.getBitmapSerdeFactory());
-
-    final NestedCommonFormatColumnFormatSpec defaultSpec;
-    if (indexSpec.getAutoColumnFormatSpec() != null) {
-      defaultSpec = indexSpec.getAutoColumnFormatSpec();
-    } else {
-      defaultSpec = DEFAULT;
-    }
-
-    if (objectFieldsDictionaryEncoding == null) {
-      if (defaultSpec.getObjectFieldsDictionaryEncoding() != null) {
-        builder.setObjectFieldsDictionaryEncoding(defaultSpec.getObjectFieldsDictionaryEncoding());
-      } else {
-        builder.setObjectFieldsDictionaryEncoding(StringEncodingStrategy.DEFAULT);
-      }
-    }
-
-    if (objectStorageEncoding == null) {
-      if (defaultSpec.getObjectStorageEncoding() != null) {
-        builder.setObjectStorageEncoding(defaultSpec.getObjectStorageEncoding());
-      } else {
-        builder.setObjectStorageEncoding(ObjectStorageEncoding.SMILE);
-      }
-    }
-
-    if (objectStorageCompression == null) {
-      if (defaultSpec.getObjectStorageCompression() != null) {
-        builder.setObjectStorageCompression(defaultSpec.getObjectStorageCompression());
-      } else if (indexSpec.getJsonCompression() != null) {
-        builder.setObjectStorageCompression(indexSpec.getJsonCompression());
-      } else {
-        builder.setObjectStorageCompression(CompressionStrategy.LZ4);
-      }
-    }
-
-    if (stringDictionaryEncoding == null) {
-      if (defaultSpec.getStringDictionaryEncoding() != null) {
-        builder.setStringDictionaryEncoding(defaultSpec.getStringDictionaryEncoding());
-      } else {
-        builder.setStringDictionaryEncoding(indexSpec.getStringDictionaryEncoding());
-      }
-    }
-
-    if (dictionaryEncodedColumnCompression == null) {
-      if (defaultSpec.getDictionaryEncodedColumnCompression() != null) {
-        builder.setDictionaryEncodedColumnCompression(defaultSpec.getDictionaryEncodedColumnCompression());
-      } else {
-        builder.setDictionaryEncodedColumnCompression(indexSpec.getDimensionCompression());
-      }
-    }
-
-    if (longColumnEncoding == null) {
-      if (defaultSpec.getLongColumnEncoding() != null) {
-        builder.setLongColumnEncoding(defaultSpec.getLongColumnEncoding());
-      } else {
-        builder.setLongColumnEncoding(indexSpec.getLongEncoding());
-      }
-    }
-
-    if (longColumnCompression == null) {
-      if (defaultSpec.getLongColumnCompression() != null) {
-        builder.setLongColumnCompression(defaultSpec.getLongColumnCompression());
-      } else {
-        builder.setLongColumnCompression(indexSpec.getMetricCompression());
-      }
-    }
-
-    if (doubleColumnCompression == null) {
-      if (defaultSpec.getDoubleColumnCompression() != null) {
-        builder.setDoubleColumnCompression(defaultSpec.getDoubleColumnCompression());
-      } else {
-        builder.setDoubleColumnCompression(indexSpec.getMetricCompression());
-      }
-    }
-
-    return builder.build();
+    this.longFieldBitmapIndexType = longFieldBitmapIndexType;
+    this.doubleFieldBitmapIndexType = doubleFieldBitmapIndexType;
   }
 
   @Nullable
@@ -293,6 +323,20 @@ public class NestedCommonFormatColumnFormatSpec
     return bitmapEncoding;
   }
 
+  @Nullable
+  @JsonProperty
+  public BitmapIndexType getLongFieldBitmapIndexType()
+  {
+    return longFieldBitmapIndexType;
+  }
+
+  @Nullable
+  @JsonProperty
+  public BitmapIndexType getDoubleFieldBitmapIndexType()
+  {
+    return doubleFieldBitmapIndexType;
+  }
+
   @Override
   public boolean equals(Object o)
   {
@@ -308,7 +352,9 @@ public class NestedCommonFormatColumnFormatSpec
            && longColumnEncoding == that.longColumnEncoding
            && longColumnCompression == that.longColumnCompression
            && doubleColumnCompression == that.doubleColumnCompression
-           && Objects.equals(bitmapEncoding, that.bitmapEncoding);
+           && Objects.equals(bitmapEncoding, that.bitmapEncoding)
+           && Objects.equals(longFieldBitmapIndexType, that.longFieldBitmapIndexType)
+           && Objects.equals(doubleFieldBitmapIndexType, that.doubleFieldBitmapIndexType);
   }
 
   @Override
@@ -323,7 +369,9 @@ public class NestedCommonFormatColumnFormatSpec
         longColumnEncoding,
         longColumnCompression,
         doubleColumnCompression,
-        bitmapEncoding
+        bitmapEncoding,
+        longFieldBitmapIndexType,
+        doubleFieldBitmapIndexType
     );
   }
 
@@ -340,6 +388,8 @@ public class NestedCommonFormatColumnFormatSpec
            ", longColumnCompression=" + longColumnCompression +
            ", doubleColumnCompression=" + doubleColumnCompression +
            ", bitmapEncoding=" + bitmapEncoding +
+           ", longFieldBitmapIndexType=" + longFieldBitmapIndexType +
+           ", doubleFieldBitmapIndexType=" + doubleFieldBitmapIndexType +
            '}';
   }
 
@@ -362,6 +412,10 @@ public class NestedCommonFormatColumnFormatSpec
     @Nullable
     private CompressionStrategy doubleColumnCompression;
     @Nullable
+    private BitmapIndexType longFieldBitmapIndexType;
+    @Nullable
+    private BitmapIndexType doubleFieldBitmapIndexType;
+    @Nullable
     private BitmapSerdeFactory bitmapEncoding;
 
     public Builder()
@@ -380,6 +434,8 @@ public class NestedCommonFormatColumnFormatSpec
       this.longColumnCompression = spec.longColumnCompression;
       this.doubleColumnCompression = spec.doubleColumnCompression;
       this.bitmapEncoding = spec.bitmapEncoding;
+      this.longFieldBitmapIndexType = spec.longFieldBitmapIndexType;
+      this.doubleFieldBitmapIndexType = spec.doubleFieldBitmapIndexType;
     }
 
     public Builder setObjectFieldsDictionaryEncoding(@Nullable StringEncodingStrategy objectFieldsDictionaryEncoding)
@@ -432,6 +488,18 @@ public class NestedCommonFormatColumnFormatSpec
       return this;
     }
 
+    public Builder setLongFieldBitmapIndexType(@Nullable BitmapIndexType longFieldBitmapIndexType)
+    {
+      this.longFieldBitmapIndexType = longFieldBitmapIndexType;
+      return this;
+    }
+
+    public Builder setDoubleFieldBitmapIndexType(@Nullable BitmapIndexType doubleFieldBitmapIndexType)
+    {
+      this.doubleFieldBitmapIndexType = doubleFieldBitmapIndexType;
+      return this;
+    }
+
     public Builder setBitmapEncoding(@Nullable BitmapSerdeFactory bitmapEncoding)
     {
       this.bitmapEncoding = bitmapEncoding;
@@ -449,7 +517,9 @@ public class NestedCommonFormatColumnFormatSpec
           longColumnEncoding,
           longColumnCompression,
           doubleColumnCompression,
-          bitmapEncoding
+          bitmapEncoding,
+          longFieldBitmapIndexType,
+          doubleFieldBitmapIndexType
       );
     }
   }

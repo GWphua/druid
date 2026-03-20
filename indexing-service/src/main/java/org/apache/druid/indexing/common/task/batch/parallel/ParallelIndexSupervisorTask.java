@@ -74,6 +74,7 @@ import org.apache.druid.segment.incremental.RowIngestionMeters;
 import org.apache.druid.segment.incremental.RowIngestionMetersTotals;
 import org.apache.druid.segment.incremental.SimpleRowIngestionMeters;
 import org.apache.druid.segment.indexing.TuningConfig;
+import org.apache.druid.segment.loading.DataSegmentKiller;
 import org.apache.druid.segment.metadata.CentralizedDatasourceSchemaConfig;
 import org.apache.druid.segment.realtime.ChatHandler;
 import org.apache.druid.segment.realtime.ChatHandlers;
@@ -84,6 +85,7 @@ import org.apache.druid.server.security.AuthorizationUtils;
 import org.apache.druid.server.security.AuthorizerMapper;
 import org.apache.druid.server.security.ResourceAction;
 import org.apache.druid.timeline.DataSegment;
+import org.apache.druid.timeline.SegmentId;
 import org.apache.druid.timeline.partition.BuildingShardSpec;
 import org.apache.druid.timeline.partition.NumberedShardSpec;
 import org.apache.druid.timeline.partition.PartitionBoundaries;
@@ -209,6 +211,9 @@ public class ParallelIndexSupervisorTask extends AbstractBatchIndexTask
   private Long segmentsRead;
   private Long segmentsPublished;
   private final boolean isCompactionTask;
+
+  @Nullable
+  private Map<String, GeneratedPartitionsReport> deepStorageShuffleReports;
 
   @JsonCreator
   public ParallelIndexSupervisorTask(
@@ -761,6 +766,7 @@ public class ParallelIndexSupervisorTask extends AbstractBatchIndexTask
       if (cardinalityRunner.getReports().isEmpty()) {
         String msg = "No valid rows for hash partitioning."
                      + " All rows may have invalid timestamps or have been filtered out.";
+
         LOG.warn(msg);
         return TaskStatus.success(getId(), msg);
       }
@@ -811,6 +817,7 @@ public class ParallelIndexSupervisorTask extends AbstractBatchIndexTask
       );
       return TaskStatus.failure(getId(), errMsg);
     }
+    deepStorageShuffleReports = indexingRunner.getReports();
     indexGenerateRowStats = doGetRowStatsAndUnparseableEventsParallelMultiPhase(indexingRunner, true);
 
     // 2. Partial segment merge phase
@@ -876,8 +883,17 @@ public class ParallelIndexSupervisorTask extends AbstractBatchIndexTask
       if (intervalToPartitions.isEmpty()) {
         String msg = "No valid rows for range partitioning."
                      + " All rows may have invalid timestamps or multiple dimension values.";
-        LOG.warn(msg);
-        return TaskStatus.success(getId(), msg);
+
+        if (getIngestionMode() == IngestionMode.REPLACE) {
+          // In REPLACE mode, publish segments (and tombstones, when called for) even when no new data was produced
+          publishSegments(toolbox, Collections.emptyMap());
+          TaskStatus taskStatus = TaskStatus.success(getId(), msg);
+          updateAndWriteCompletionReports(taskStatus);
+          return taskStatus;
+        } else {
+          LOG.warn(msg);
+          return TaskStatus.success(getId(), msg);
+        }
       }
     }
     catch (Exception e) {
@@ -910,6 +926,7 @@ public class ParallelIndexSupervisorTask extends AbstractBatchIndexTask
       return TaskStatus.failure(getId(), errMsg);
     }
 
+    deepStorageShuffleReports = indexingRunner.getReports();
     indexGenerateRowStats = doGetRowStatsAndUnparseableEventsParallelMultiPhase(indexingRunner, true);
 
     // partition (interval, partitionId) -> partition locations
@@ -945,6 +962,62 @@ public class ParallelIndexSupervisorTask extends AbstractBatchIndexTask
 
     updateAndWriteCompletionReports(taskStatus);
     return taskStatus;
+  }
+
+  /**
+   * Cleans up deep storage shuffle data produced during phase 1 of multi-phase parallel indexing.
+   * <p>
+   * Cleanup is performed here in the supervisor task rather than in
+   * {@link org.apache.druid.indexing.worker.shuffle.DeepStorageIntermediaryDataManager} because of
+   * the process model: phase-1 sub-tasks run as separate peon processes that exit before phase 2
+   * starts. Each sub-task's DeepStorageIntermediaryDataManager instance is destroyed when the peon
+   * exits, so no surviving manager instance has knowledge of what files were pushed. The supervisor
+   * task is the only entity that is both alive after phase 2 completes and has the complete set of
+   * loadSpecs (collected from all sub-task reports).
+   * <p>
+   * This method constructs minimal {@link DataSegment} objects from {@link DeepStoragePartitionStat} loadSpecs and
+   * delegates deletion to the appropriate storage-specific {@link DataSegmentKiller}.
+   *
+   * @param killer  the segment killer from {@link TaskToolbox#getDataSegmentKiller()}.
+   * @param reports phase-1 sub-task reports containing partition stats with loadSpecs,
+   *                may be null or empty if phase 1 produced no output.
+   */
+  @VisibleForTesting
+  static void cleanupDeepStorageShuffleData(
+      DataSegmentKiller killer,
+      String datasource,
+      @Nullable Map<String, GeneratedPartitionsReport> reports
+  )
+  {
+    if (reports == null || reports.isEmpty()) {
+      return;
+    }
+
+    final List<DataSegment> segmentsToKill = new ArrayList<>();
+    for (final GeneratedPartitionsReport report : reports.values()) {
+      for (final PartitionStat stat : report.getPartitionStats()) {
+        if (stat instanceof DeepStoragePartitionStat deepStorageStat) {
+          segmentsToKill.add(
+              DataSegment.builder(
+                  SegmentId.of(datasource, deepStorageStat.getInterval(), "shuffle_data", deepStorageStat.getBucketId())
+              ).loadSpec(deepStorageStat.getLoadSpec()).build()
+          );
+        }
+      }
+    }
+
+    if (segmentsToKill.isEmpty()) {
+      return;
+    }
+
+    LOG.info("Cleaning up [%d] deep storage shuffle files for datasource[%s].", segmentsToKill.size(), datasource);
+    try {
+      killer.kill(segmentsToKill);
+    }
+    catch (Exception e) {
+      // Cleanup failures must never cause the overall indexing task to fail.
+      LOG.warn(e, "Failed to clean up deep storage shuffle data files for datasource[%s]", datasource);
+    }
   }
 
   private static Map<Interval, Union> mergeCardinalityReports(Collection<DimensionCardinalityReport> reports)
@@ -1162,11 +1235,19 @@ public class ParallelIndexSupervisorTask extends AbstractBatchIndexTask
         Tasks.STORE_COMPACTION_STATE_KEY,
         Tasks.DEFAULT_STORE_COMPACTION_STATE
     );
-    final Function<Set<DataSegment>, Set<DataSegment>> annotateFunction = addCompactionStateToSegments(
-        storeCompactionState,
-        toolbox,
-        ingestionSchema
+    final String indexingStateFingerprint = getContextValue(
+        Tasks.INDEXING_STATE_FINGERPRINT_KEY,
+        null
     );
+
+    final Function<Set<DataSegment>, Set<DataSegment>> annotateFunction =
+        addCompactionStateToSegments(
+            storeCompactionState,
+            toolbox,
+            ingestionSchema
+        ).andThen(
+            addIndexingStateFingerprintToSegments(indexingStateFingerprint)
+        );
 
     Set<DataSegment> tombStones = Collections.emptySet();
     if (getIngestionMode() == IngestionMode.REPLACE) {
@@ -1602,11 +1683,14 @@ public class ParallelIndexSupervisorTask extends AbstractBatchIndexTask
       return (RowIngestionMetersTotals) buildSegmentsRowStats;
     } else if (buildSegmentsRowStats instanceof Map) {
       Map<String, Object> buildSegmentsRowStatsMap = (Map<String, Object>) buildSegmentsRowStats;
+      Map<String, Integer> thrownAwayByReason = (Map) buildSegmentsRowStatsMap.get("thrownAwayByReason");
       return new RowIngestionMetersTotals(
           ((Number) buildSegmentsRowStatsMap.get("processed")).longValue(),
           ((Number) buildSegmentsRowStatsMap.get("processedBytes")).longValue(),
           ((Number) buildSegmentsRowStatsMap.get("processedWithError")).longValue(),
           ((Number) buildSegmentsRowStatsMap.get("thrownAway")).longValue(),
+          // Jackson will serde numerics ≤ 32bits as Integers, rather than Longs
+          thrownAwayByReason != null ? CollectionUtils.mapValues(thrownAwayByReason, Integer::longValue) : null,
           ((Number) buildSegmentsRowStatsMap.get("unparseable")).longValue()
       );
     } else {
@@ -1814,6 +1898,8 @@ public class ParallelIndexSupervisorTask extends AbstractBatchIndexTask
   @Override
   public void cleanUp(TaskToolbox toolbox, @Nullable TaskStatus taskStatus) throws Exception
   {
+    cleanupDeepStorageShuffleData(toolbox.getDataSegmentKiller(), getDataSource(), deepStorageShuffleReports);
+
     if (!isCompactionTask) {
       super.cleanUp(toolbox, taskStatus);
     }
