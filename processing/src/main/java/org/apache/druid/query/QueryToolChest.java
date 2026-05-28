@@ -148,6 +148,15 @@ public abstract class QueryToolChest<ResultType, QueryType extends Query<ResultT
   }
 
   /**
+   * Returns whether realtime query execution should merge hydrants within each sink before merging across sinks.
+   * This is separate from {@code bySegment}, which controls the shape of the returned results.
+   */
+  public boolean shouldMergeHydrantsBySink(QueryType query)
+  {
+    return false;
+  }
+
+  /**
    * Creates a merge function that is used to merge intermediate aggregates from historicals in broker. This merge
    * function is used in the default {@link ResultMergeQueryRunner} provided by
    * {@link QueryToolChest#mergeResults(QueryRunner)} and also used in

@@ -164,6 +164,19 @@ public class TimeseriesQueryQueryToolChestTest extends InitializedNullHandlingTe
   }
 
   @Test
+  public void testNotShouldMergeHydrantsBySink()
+  {
+    final TimeseriesQuery query = Druids.newTimeseriesQueryBuilder()
+                                        .dataSource("dummy")
+                                        .intervals("2015-01-01/2015-01-02")
+                                        .descending(descending)
+                                        .granularity(Granularities.ALL)
+                                        .build();
+
+    Assert.assertFalse(TOOL_CHEST.shouldMergeHydrantsBySink(query));
+  }
+
+  @Test
   public void testCacheKey()
   {
     final TimeseriesQuery query1 = Druids.newTimeseriesQueryBuilder()

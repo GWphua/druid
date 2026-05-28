@@ -150,6 +150,20 @@ public class SegmentMetadataQueryQueryToolChestTest
     Assert.assertEquals(result, fromCacheResult);
   }
 
+  @Test
+  public void testShouldMergeHydrantsBySink()
+  {
+    final SegmentMetadataQuery query = Druids.newSegmentMetadataQueryBuilder()
+                                             .dataSource(TEST_DATASOURCE)
+                                             .intervals("2015-01-01/2015-01-02")
+                                             .merge(true)
+                                             .build();
+
+    Assert.assertTrue(
+        new SegmentMetadataQueryQueryToolChest(new SegmentMetadataQueryConfig()).shouldMergeHydrantsBySink(query)
+    );
+  }
+
   @EnumSource(AggregatorMergeStrategy.class)
   @ParameterizedTest(name = "{index}: with AggregatorMergeStrategy {0}")
   public void testMergeAggregators(AggregatorMergeStrategy aggregatorMergeStrategy)

@@ -162,6 +162,12 @@ public class SegmentMetadataQueryQueryToolChest extends QueryToolChest<SegmentAn
   }
 
   @Override
+  public boolean shouldMergeHydrantsBySink(SegmentMetadataQuery query)
+  {
+    return true;
+  }
+
+  @Override
   public QueryMetrics<Query<?>> makeMetrics(SegmentMetadataQuery query)
   {
     return queryMetricsFactory.makeMetrics(query);

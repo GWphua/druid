@@ -322,7 +322,11 @@ public class SinkQuerySegmentWalker implements QuerySegmentWalker
 
       final QueryRunner<T> mergedRunner;
 
-      if (query.context().isBySegment()) {
+      // Queries such as SegmentMetadata are not memory-intensive, and will benefit from reduced per-hydrant merge
+      // overhead. In such cases, it is more sensible to merge all hydrants for a sink before merging the sinks.
+      final boolean shouldMergeHydrantsBySink = query.context().isBySegment() || toolChest.shouldMergeHydrantsBySink(query);
+
+      if (shouldMergeHydrantsBySink) {
         // bySegment: merge all hydrants for a Sink first, then merge Sinks. Necessary to keep results for the
         // same segment together, but causes additional memory usage due to the extra layer of materialization,
         // so we only do this if we need to.
