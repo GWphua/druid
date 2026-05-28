@@ -81,7 +81,6 @@ import org.joda.time.Interval;
 import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -210,9 +209,9 @@ public class SinkQuerySegmentWalker implements QuerySegmentWalker
     // QueryRunner returned by this method is closed. (We can't do the acquisition and releasing at the level of
     // each FireHydrant's runner, since then it wouldn't be properly all-or-nothing on a per-Sink basis.)
     final List<SinkSegmentReference> allSegmentReferences = new ArrayList<>();
-    final Map<SegmentDescriptor, SegmentId> segmentIdMap = new HashMap<>();
     final LinkedHashMap<SegmentDescriptor, List<QueryRunner<T>>> allRunners = new LinkedHashMap<>();
     final ConcurrentHashMap<String, SinkMetricsEmittingQueryRunner.SegmentMetrics> segmentMetricsAccumulator = new ConcurrentHashMap<>();
+    final boolean shouldMergeHydrantsBySink = query.context().isBySegment() || toolChest.shouldMergeHydrantsBySink(query);
 
     final List<SegmentDescriptor> missingSegments = new ArrayList<>();
     try {
@@ -230,7 +229,6 @@ public class SinkQuerySegmentWalker implements QuerySegmentWalker
 
         final Sink theSink = chunk.getObject().sink;
         final SegmentId sinkSegmentId = theSink.getSegment().getId();
-        segmentIdMap.put(descriptor, sinkSegmentId);
         final List<SinkSegmentReference> sinkSegmentReferences =
             theSink.acquireSegmentReferences(segmentMapFn, skipIncrementalSegment);
 
@@ -241,6 +239,25 @@ public class SinkQuerySegmentWalker implements QuerySegmentWalker
           allRunners.put(descriptor, Collections.singletonList(new NoopQueryRunner<>()));
         } else {
           allSegmentReferences.addAll(sinkSegmentReferences);
+
+          if (shouldMergeHydrantsBySink) {
+            allRunners.put(
+                descriptor,
+                Collections.singletonList(
+                    makeHydrantsBySinkRunner(
+                        factory,
+                        sinkSegmentReferences,
+                        sinkSegmentId,
+                        cacheKeyPrefix,
+                        descriptor,
+                        toolChest,
+                        segmentMetricsAccumulator,
+                        cpuTimeAccumulator
+                    )
+                )
+            );
+            continue;
+          }
 
           allRunners.put(
               descriptor,
@@ -322,26 +339,10 @@ public class SinkQuerySegmentWalker implements QuerySegmentWalker
 
       final QueryRunner<T> mergedRunner;
 
-      // Queries such as SegmentMetadata are not memory-intensive, and will benefit from reduced per-hydrant merge
-      // overhead. In such cases, it is more sensible to merge all hydrants for a sink before merging the sinks.
-      final boolean shouldMergeHydrantsBySink = query.context().isBySegment() || toolChest.shouldMergeHydrantsBySink(query);
-
       if (shouldMergeHydrantsBySink) {
-        // bySegment: merge all hydrants for a Sink first, then merge Sinks. Necessary to keep results for the
-        // same segment together, but causes additional memory usage due to the extra layer of materialization,
-        // so we only do this if we need to.
         mergedRunner = factory.mergeRunners(
             queryProcessingPool,
-            allRunners.entrySet().stream().map(
-                entry -> new BySegmentQueryRunner<>(
-                    segmentIdMap.get(entry.getKey()),
-                    entry.getKey().getInterval().getStart(),
-                    factory.mergeRunners(
-                        DirectQueryProcessingPool.INSTANCE,
-                        entry.getValue()
-                    )
-                )
-            ).collect(Collectors.toList())
+            allRunners.values().stream().flatMap(List::stream).collect(Collectors.toList())
         );
       } else {
         // Not bySegment: merge all hydrants at the same level, rather than grouped by Sink (segment).
@@ -396,6 +397,134 @@ public class SinkQuerySegmentWalker implements QuerySegmentWalker
     catch (Throwable e) {
       throw CloseableUtils.closeAndWrapInCatch(e, () -> CloseableUtils.closeAll(allSegmentReferences));
     }
+  }
+
+  private <T> QueryRunner<T> makeHydrantsBySinkRunner(
+      final QueryRunnerFactory<T, Query<T>> factory,
+      final List<SinkSegmentReference> sinkSegmentReferences,
+      final SegmentId sinkSegmentId,
+      final Optional<byte[]> cacheKeyPrefix,
+      final SegmentDescriptor descriptor,
+      final QueryToolChest<T, Query<T>> toolChest,
+      final ConcurrentHashMap<String, SinkMetricsEmittingQueryRunner.SegmentMetrics> segmentMetricsAccumulator,
+      final AtomicLong cpuTimeAccumulator
+  )
+  {
+    QueryRunner<T> runner = factory.mergeRunners(
+        DirectQueryProcessingPool.INSTANCE,
+        new SinkQueryRunners<>(
+            sinkSegmentReferences.stream().map(
+                segmentReference -> {
+                  final QueryRunner<T> perHydrantRunner = maybeWrapWithCaching(
+                      factory.createRunner(segmentReference.getSegment()),
+                      segmentReference,
+                      sinkSegmentId,
+                      cacheKeyPrefix,
+                      descriptor,
+                      toolChest
+                  );
+                  return Pair.of(segmentReference.getSegment().getDataInterval(), perHydrantRunner);
+                }
+            ).collect(Collectors.toList())
+        )
+    );
+
+    runner = new BySegmentQueryRunner<>(
+        sinkSegmentId,
+        descriptor.getInterval().getStart(),
+        runner
+    );
+
+    runner = wrapWithSinkMetrics(
+        factory,
+        runner,
+        segmentMetricsAccumulator,
+        SEGMENT_QUERY_METRIC,
+        sinkSegmentId
+    );
+
+    runner = wrapWithSinkMetrics(
+        factory,
+        runner,
+        segmentMetricsAccumulator,
+        SEGMENT_CACHE_AND_WAIT_METRICS,
+        sinkSegmentId
+    );
+
+    runner = CPUTimeMetricQueryRunner.safeBuild(
+        runner,
+        toolChest,
+        emitter,
+        cpuTimeAccumulator,
+        false
+    );
+
+    return new SpecificSegmentQueryRunner<>(
+        runner,
+        new SpecificSegmentSpec(descriptor)
+    );
+  }
+
+  private <T> QueryRunner<T> wrapWithSinkMetrics(
+      final QueryRunnerFactory<T, Query<T>> factory,
+      final QueryRunner<T> runner,
+      final ConcurrentHashMap<String, SinkMetricsEmittingQueryRunner.SegmentMetrics> segmentMetricsAccumulator,
+      final Set<String> metrics,
+      final SegmentId sinkSegmentId
+  )
+  {
+    return new SinkMetricsEmittingQueryRunner<>(
+        emitter,
+        factory.getToolchest(),
+        runner,
+        segmentMetricsAccumulator,
+        metrics,
+        sinkSegmentId.toString()
+    );
+  }
+
+  private <T> QueryRunner<T> maybeWrapWithCaching(
+      final QueryRunner<T> runner,
+      final SinkSegmentReference segmentReference,
+      final SegmentId sinkSegmentId,
+      final Optional<byte[]> cacheKeyPrefix,
+      final SegmentDescriptor descriptor,
+      final QueryToolChest<T, ? extends Query<T>> toolChest
+  )
+  {
+    // 1) Only use caching if data is immutable
+    // 2) Hydrants are not the same between replicas, make sure cache is local
+    if (segmentReference.isImmutable() && cache.isLocal()) {
+      final Segment segment = segmentReference.getSegment();
+      final TimeBoundaryInspector timeBoundaryInspector = segment.as(TimeBoundaryInspector.class);
+      final Interval cacheKeyInterval;
+
+      if (timeBoundaryInspector != null) {
+        cacheKeyInterval = timeBoundaryInspector.getMinMaxInterval();
+      } else {
+        cacheKeyInterval = segment.getDataInterval();
+      }
+
+      return new CachingQueryRunner<>(
+          makeHydrantCacheIdentifier(sinkSegmentId, segmentReference.getHydrantNumber()),
+          cacheKeyPrefix,
+          descriptor,
+          cacheKeyInterval,
+          objectMapper,
+          cache,
+          toolChest,
+          runner,
+          // Always populate in foreground regardless of config
+          new ForegroundCachePopulator(
+              objectMapper,
+              cachePopulatorStats,
+              cacheConfig.getMaxEntrySize()
+          ),
+          cacheConfig
+      );
+    }
+
+    return runner;
   }
 
   /**

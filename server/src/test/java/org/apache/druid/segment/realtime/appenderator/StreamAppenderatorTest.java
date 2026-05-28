@@ -35,16 +35,21 @@ import org.apache.druid.java.util.common.Pair;
 import org.apache.druid.java.util.common.granularity.Granularities;
 import org.apache.druid.java.util.metrics.StubServiceEmitter;
 import org.apache.druid.metadata.PendingSegmentRecord;
+import org.apache.druid.query.BySegmentResultValueClass;
 import org.apache.druid.query.DefaultQueryMetrics;
 import org.apache.druid.query.Druids;
 import org.apache.druid.query.Order;
 import org.apache.druid.query.QueryPlus;
+import org.apache.druid.query.QueryContexts;
 import org.apache.druid.query.RestrictedDataSource;
 import org.apache.druid.query.Result;
 import org.apache.druid.query.SegmentDescriptor;
 import org.apache.druid.query.TableDataSource;
 import org.apache.druid.query.aggregation.LongSumAggregatorFactory;
 import org.apache.druid.query.context.ResponseContext;
+import org.apache.druid.query.metadata.metadata.ListColumnIncluderator;
+import org.apache.druid.query.metadata.metadata.SegmentAnalysis;
+import org.apache.druid.query.metadata.metadata.SegmentMetadataQuery;
 import org.apache.druid.query.policy.NoRestrictionPolicy;
 import org.apache.druid.query.policy.RestrictAllTablesPolicyEnforcer;
 import org.apache.druid.query.scan.ScanQuery;
@@ -77,6 +82,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -2291,6 +2297,53 @@ public class StreamAppenderatorTest extends InitializedNullHandlingTest
       );
 
       serviceEmitter.flush();
+    }
+  }
+
+  @Test
+  @SuppressWarnings("unchecked")
+  public void testSegmentMetadataQueryWithMultipleHydrants() throws Exception
+  {
+    try (final StreamAppenderatorTester tester =
+             new StreamAppenderatorTester.Builder().maxRowsInMemory(1)
+                                                   .basePersistDirectory(temporaryFolder.newFolder())
+                                                   .build()) {
+      final Appenderator appenderator = tester.getAppenderator();
+
+      appenderator.startJob();
+      appenderator.add(IDENTIFIERS.get(0), ir("2000", "foo", 1), Suppliers.ofInstance(Committers.nil()));
+      appenderator.add(IDENTIFIERS.get(0), ir("2000T01", "bar", 2), Suppliers.ofInstance(Committers.nil()));
+      appenderator.add(IDENTIFIERS.get(0), ir("2000T02", "baz", 4), Suppliers.ofInstance(Committers.nil()));
+
+      final SegmentMetadataQuery query = Druids.newSegmentMetadataQueryBuilder()
+                                               .dataSource(StreamAppenderatorTester.DATASOURCE)
+                                               .intervals(ImmutableList.of(Intervals.of("2000/2001")))
+                                               .toInclude(new ListColumnIncluderator(Collections.singletonList("dim")))
+                                               .analysisTypes(
+                                                   EnumSet.of(
+                                                       SegmentMetadataQuery.AnalysisType.SIZE,
+                                                       SegmentMetadataQuery.AnalysisType.INTERVAL
+                                                   )
+                                               )
+                                               .merge(true)
+                                               .build();
+
+      final List<SegmentAnalysis> results =
+          (List<SegmentAnalysis>) (List<?>) QueryPlus.wrap(query)
+                                                     .run(appenderator, ResponseContext.createEmpty())
+                                                     .toList();
+      Assert.assertEquals(1, results.size());
+      Assert.assertEquals(3L, results.get(0).getNumRows());
+
+      final List<Result<BySegmentResultValueClass<SegmentAnalysis>>> bySegmentResults =
+          (List<Result<BySegmentResultValueClass<SegmentAnalysis>>>) (List<?>) QueryPlus.wrap(
+              query.withOverriddenContext(ImmutableMap.of(QueryContexts.BY_SEGMENT_KEY, true))
+      ).run(appenderator, ResponseContext.createEmpty()).toList();
+      Assert.assertEquals(1, bySegmentResults.size());
+      Assert.assertEquals(
+          3L,
+          bySegmentResults.get(0).getValue().getResults().stream().mapToLong(SegmentAnalysis::getNumRows).sum()
+      );
     }
   }
 

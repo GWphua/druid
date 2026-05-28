@@ -46,6 +46,10 @@ import org.apache.druid.query.QueryRunnerTestHelper;
 import org.apache.druid.query.aggregation.CountAggregatorFactory;
 import org.apache.druid.query.aggregation.LongSumAggregatorFactory;
 import org.apache.druid.query.expression.TestExprMacroTable;
+import org.apache.druid.query.metadata.SegmentMetadataQueryConfig;
+import org.apache.druid.query.metadata.SegmentMetadataQueryQueryToolChest;
+import org.apache.druid.query.metadata.SegmentMetadataQueryRunnerFactory;
+import org.apache.druid.query.metadata.metadata.SegmentMetadataQuery;
 import org.apache.druid.query.policy.NoopPolicyEnforcer;
 import org.apache.druid.query.policy.PolicyEnforcer;
 import org.apache.druid.query.scan.ScanQuery;
@@ -97,6 +101,7 @@ public class StreamAppenderatorTester implements AutoCloseable
   private final Appenderator appenderator;
   private final ExecutorService queryExecutor;
   private final ServiceEmitter emitter;
+  private final SegmentMetadataQueryQueryToolChest segmentMetadataQueryToolChest;
 
   private final List<DataSegment> pushedSegments = new CopyOnWriteArrayList<>();
 
@@ -111,6 +116,7 @@ public class StreamAppenderatorTester implements AutoCloseable
       final DataSegmentAnnouncer announcer,
       final CentralizedDatasourceSchemaConfig centralizedDatasourceSchemaConfig,
       final ServiceEmitter serviceEmitter,
+      final SegmentMetadataQueryQueryToolChest segmentMetadataQueryToolChest,
       final PolicyEnforcer policyEnforcer,
       final boolean releaseLocksOnHandoff,
       final TaskIntervalUnlocker taskIntervalUnlocker,
@@ -154,6 +160,10 @@ public class StreamAppenderatorTester implements AutoCloseable
 
     metrics = segmentGenerationMetrics == null ? new SegmentGenerationMetrics() : segmentGenerationMetrics;
     queryExecutor = Execs.singleThreaded("queryExecutor(%d)");
+    this.segmentMetadataQueryToolChest =
+        segmentMetadataQueryToolChest == null
+        ? new SegmentMetadataQueryQueryToolChest(new SegmentMetadataQueryConfig("P1W"))
+        : segmentMetadataQueryToolChest;
 
     IndexIO indexIO = new IndexIO(
         objectMapper,
@@ -208,6 +218,10 @@ public class StreamAppenderatorTester implements AutoCloseable
           indexIO,
           indexMerger,
           DefaultQueryRunnerFactoryConglomerate.buildFromQueryRunnerFactories(ImmutableMap.of(
+              SegmentMetadataQuery.class, new SegmentMetadataQueryRunnerFactory(
+                  this.segmentMetadataQueryToolChest,
+                  QueryRunnerTestHelper.NOOP_QUERYWATCHER
+              ),
               TimeseriesQuery.class, new TimeseriesQueryRunnerFactory(
                   new TimeseriesQueryQueryToolChest(),
                   new TimeseriesQueryEngine(),
@@ -251,6 +265,10 @@ public class StreamAppenderatorTester implements AutoCloseable
           indexIO,
           indexMerger,
           DefaultQueryRunnerFactoryConglomerate.buildFromQueryRunnerFactories(ImmutableMap.of(
+              SegmentMetadataQuery.class, new SegmentMetadataQueryRunnerFactory(
+                  this.segmentMetadataQueryToolChest,
+                  QueryRunnerTestHelper.NOOP_QUERYWATCHER
+              ),
               TimeseriesQuery.class, new TimeseriesQueryRunnerFactory(
                   new TimeseriesQueryQueryToolChest(),
                   new TimeseriesQueryEngine(),
@@ -336,6 +354,7 @@ public class StreamAppenderatorTester implements AutoCloseable
     private boolean skipBytesInMemoryOverheadCheck;
     private int delayInMilli = 0;
     private ServiceEmitter serviceEmitter;
+    private SegmentMetadataQueryQueryToolChest segmentMetadataQueryToolChest;
     private PolicyEnforcer policyEnforcer = NoopPolicyEnforcer.instance();
     private boolean releaseLocksOnHandoff;
     private TaskIntervalUnlocker taskIntervalUnlocker = interval -> {};
@@ -395,6 +414,14 @@ public class StreamAppenderatorTester implements AutoCloseable
       return this;
     }
 
+    public Builder withSegmentMetadataQueryToolChest(
+        final SegmentMetadataQueryQueryToolChest segmentMetadataQueryToolChest
+    )
+    {
+      this.segmentMetadataQueryToolChest = segmentMetadataQueryToolChest;
+      return this;
+    }
+
     public Builder withPolicyEnforcer(PolicyEnforcer policyEnforcer)
     {
       this.policyEnforcer = policyEnforcer;
@@ -426,6 +453,7 @@ public class StreamAppenderatorTester implements AutoCloseable
           new NoopDataSegmentAnnouncer(),
           CentralizedDatasourceSchemaConfig.create(),
           serviceEmitter,
+          segmentMetadataQueryToolChest,
           policyEnforcer,
           releaseLocksOnHandoff,
           taskIntervalUnlocker,
@@ -449,6 +477,7 @@ public class StreamAppenderatorTester implements AutoCloseable
           dataSegmentAnnouncer,
           config,
           serviceEmitter,
+          segmentMetadataQueryToolChest,
           policyEnforcer,
           releaseLocksOnHandoff,
           taskIntervalUnlocker,
